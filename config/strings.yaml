@@ -1,0 +1,43 @@
+
+window:
+  title: "Floor Plan Annotator"
+
+menu:
+  file: "File"
+  load_point_cloud: "Load Point Cloud"
+  open_project: "Open Project..."
+  save_project: "Save Project..."
+  exit: "Exit"
+
+tools:
+  select:
+    name: "Select"
+    status: "Select Tool: Click to select/move nodes. Delete key to remove."
+    moving: "Moving Node..."
+    cleared: "Selection cleared."
+    selected: "Item selected."
+  
+  wall:
+    name: "Wall"
+    status: "Wall Tool: Left-click to add points. Right-click to stop."
+    started: "Wall started. Click to add next point. Right-click to finish."
+    segment_added: "Wall segment added."
+    finished: "Wall drawing finished."
+    add_node_cmd: "Add Node"
+    add_wall_cmd: "Add Wall"
+
+  rect:
+    name: "Room (Rect)"
+    status: "Room Tool: Click and drag to create a rectangular room."
+    drag: "Drag to create room..."
+    add_room_cmd: "Add Room"
+
+undo:
+  undo: "Undo"
+  redo: "Redo"
+
+labels:
+  slice_height: "Slice Height (Z):"
+  z_value: "Z: {:.2f}m"
+  controls_dock: "Controls"
+  toolbar: "Tools"

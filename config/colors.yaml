@@ -1,0 +1,32 @@
+
+grid:
+  color: [60, 60, 60]
+  width: 0
+
+node:
+  brush: "yellow"
+  pen: "black"
+  radius: 4
+  z_value: 100
+  hover:
+    scale: 1.5
+    brush: "orange"
+
+wall:
+  default:
+    color: [200, 200, 200]
+    width: 3
+  selected:
+    color: [255, 100, 100]
+    width: 3
+  z_value: 50
+
+room:
+  brush: [100, 100, 255, 100] # R, G, B, A
+  pen: [100, 100, 255]
+  width: 2
+  z_value: 40
+
+background:
+  color: [240, 240, 240] # Viewer3D background
+  z_value: -100 # Canvas2D background item

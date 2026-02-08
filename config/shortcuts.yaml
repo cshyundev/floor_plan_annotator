@@ -1,0 +1,13 @@
+tools:
+  select: "Esc"
+  wall: "W"
+  rect: "R"
+  delete: 
+    - "Delete"
+    - "Backspace"
+file:
+  open_project: "Ctrl+O"
+  save_project: "Ctrl+S"
+edit:
+  undo: "Ctrl+Z"
+  redo: "Ctrl+Y"
