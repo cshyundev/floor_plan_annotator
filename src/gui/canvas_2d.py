@@ -1,264 +1,336 @@
 from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
-from PyQt6.QtCore import Qt, QRectF, pyqtSignal
+from PyQt6.QtCore import Qt, QRectF, pyqtSignal, QPointF
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen
-from src.gui.tools import SelectTool, DrawWallTool, DrawRoomTool
+from src.gui.tool_manager import ToolManager
+from src.gui.clipboard_manager import ClipboardManager
+from src.gui.data_serializer import DataSerializer
+from src.gui.event_coordinator import EventCoordinator
 from src.core.config import ConfigManager
+from src.core.input_context import InputContext
 
 class Canvas2D(QGraphicsView):
     status_message = pyqtSignal(str)
-    
+
     def __init__(self, main_window=None):
         super().__init__()
         self.scene = QGraphicsScene()
         self.setScene(self.scene)
-        
+
         # Items
         self.background_item = None
-        
-        # Undo
-        self._undo_stack = None
-        
-        # Tools
-        self.select_tool = SelectTool(self)
-        self.wall_tool = DrawWallTool(self)
-        self.room_tool = DrawRoomTool(self)
-        self.current_tool = self.select_tool
-        
-        # View settings
+        self._background_data = None  # Store original data for resize
+        self._background_origin = None  # (min_x, min_y, max_x, max_y)
+        self._background_scale = None  # pixels per meter
+
+        # View state
+        self._user_has_zoomed = False  # Track if user manually zoomed
+        self._fit_in_view_on_resize = True  # Whether to auto-fit on resize
+
+        # Sequential room ID counter
+        self._next_room_id = 0
+
+        # Tool Manager
+        self.tool_manager = ToolManager(self)
+
+        # Clipboard Manager
+        self.clipboard_manager = ClipboardManager(self)
+
+        # Data Serializer
+        self.data_serializer = DataSerializer(self)
+
+        # Event Coordinator
+        self.event_coordinator = EventCoordinator(self)
+
+        # Enable smooth transformations
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.setDragMode(QGraphicsView.DragMode.NoDrag) # Tools handle drag
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        
-        # Grid
-        self.grid_pen = QPen(QColor(60, 60, 60))
-        self.grid_pen.setWidth(0)
+        self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+        # Set view properties for better resize handling
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
+
+    @property
+    def current_tool(self):
+        """Get the current active tool."""
+        return self.tool_manager.current_tool
+
+    @property
+    def select_tool(self):
+        """Get the select tool (for compatibility)."""
+        return self.tool_manager.select_tool
+
+    @property
+    def wall_tool(self):
+        """Get the wall tool (for compatibility)."""
+        return self.tool_manager.wall_tool
+
+    @property
+    def room_tool(self):
+        """Get the room tool (for compatibility)."""
+        return self.tool_manager.room_tool
+
+    @property
+    def _clipboard(self):
+        """Get clipboard data (for compatibility)."""
+        return self.clipboard_manager._clipboard
 
     def set_undo_stack(self, stack):
         self._undo_stack = stack
         
     def push_command(self, command):
         stack = self._undo_stack
-        print(f"Canvas2D.push_command local stack: {stack}")
         if stack is not None:
             stack.push(command)
         else:
             command.redo()
 
 
+    def next_room_id(self):
+        """Return the next sequential room ID and increment counter."""
+        rid = self._next_room_id
+        self._next_room_id += 1
+        return str(rid)
+
     def set_tool(self, tool_name):
-        config = ConfigManager.instance()
-        if tool_name == "select":
-            self.current_tool = self.select_tool
-            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag) # Allow panning in select mode
-            self.status_message.emit(config.get_string("tools", "select", "status"))
-        elif tool_name == "wall":
-            self.current_tool = self.wall_tool
-            self.setDragMode(QGraphicsView.DragMode.NoDrag)
-            self.status_message.emit(config.get_string("tools", "wall", "status"))
-        elif tool_name == "room":
-            self.current_tool = self.room_tool
-            self.setDragMode(QGraphicsView.DragMode.NoDrag)
-            self.status_message.emit("Room Tool: Left Click to add points, Right Click to finish.")
+        """Switch to the specified tool.
+
+        Args:
+            tool_name: Name of the tool ("select", "wall", or "room")
+        """
+        self.tool_manager.set_tool(tool_name)
             
+    def _is_within_bounds(self, scene_pos):
+        """Check if a scene position is within the background image bounds."""
+        if self.background_item is None:
+            return False
+        return self.background_item.sceneBoundingRect().contains(scene_pos)
+
+    def _create_input_context(self, event):
+        """Create an InputContext from a QMouseEvent."""
+        return InputContext(
+            scene_pos=self.mapToScene(event.pos()),
+            screen_pos=event.pos(),
+            buttons=event.buttons(),
+            modifiers=event.modifiers()
+        )
+
     def update_background(self, image_data, origin, scale):
         """
         Updates the background image.
-        image_data: numpy array (grayscale)
-        origin: (min_x, min_y, max_x, max_y) in world coords
-        scale: pixels per meter
+
+        Args:
+            image_data: numpy array (grayscale)
+            origin: (min_x, min_y, max_x, max_y) in world coords (meters)
+            scale: pixels per meter
+
+        Note:
+            Scene coordinates are in meters (real-world coordinates).
+            The background image is scaled and positioned to match real-world coordinates.
         """
         if image_data is None:
             return
-            
-        height, width = image_data.shape
+
+        # Store original data for potential resize handling
+        # CRITICAL: Make a copy of numpy array to prevent segfault
+        import numpy as np
+        self._background_data = np.copy(image_data)  # Deep copy!
+        self._background_origin = origin
+        self._background_scale = scale
+
+        # Create QImage from numpy array
+        # Use the copied data to prevent segfault when original is garbage collected
+        height, width = self._background_data.shape
         bytes_per_line = width
-        
-        q_image = QImage(image_data.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
+
+        # Create QImage from copied data
+        q_image = QImage(
+            self._background_data.data,
+            width,
+            height,
+            bytes_per_line,
+            QImage.Format.Format_Grayscale8
+        )
+        # Make another copy to ensure QImage owns its data
+        q_image = q_image.copy()
         pixmap = QPixmap.fromImage(q_image)
-        
+
+        # Remove old background if exists
         if self.background_item:
             self.scene.removeItem(self.background_item)
-            
+
+        # Create background item
         self.background_item = QGraphicsPixmapItem(pixmap)
         config = ConfigManager.instance()
-        self.background_item.setZValue(config.get_value("colors", "background", "z_value") or -100) # Background
+        self.background_item.setZValue(config.get_value("colors", "background", "z_value") or -100)
+
+        # Position and scale background to match real-world coordinates
+        # origin = (min_x, min_y, max_x, max_y) in meters
+        # Image width in meters = (max_x - min_x)
+        # Image height in meters = (max_y - min_y)
+        min_x, min_y, max_x, max_y = origin
+        world_width = max_x - min_x
+        world_height = max_y - min_y
+
+        # Scale factor: pixels to meters
+        # If image is 1000px and represents 10m, scale_x = 1000/10 = 100 px/m
+        # QGraphicsItem scale should be meters/pixel = 1/scale
+        scale_x = world_width / width
+        scale_y = world_height / height
+
+        self.background_item.setScale(1.0)  # Reset scale first
+        self.background_item.setPos(min_x, min_y)
+        self.background_item.setTransform(
+            self.background_item.transform().scale(scale_x, scale_y)
+        )
+
         self.scene.addItem(self.background_item)
+
+        # Set scene rect to match real-world bounds with some margin
+        margin = max(world_width, world_height) * 0.1
+        self.scene.setSceneRect(
+            min_x - margin,
+            min_y - margin,
+            world_width + 2 * margin,
+            world_height + 2 * margin
+        )
+
+        # Reset zoom state and fit the view to show the entire scene
+        self._user_has_zoomed = False
+        self._fit_in_view_on_resize = True
+        self.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         
-        # TODO: Adjust coordinate system.
-        
+    def resizeEvent(self, event):
+        """Handle window resize to maintain proper view of the scene.
+
+        This ensures that real-world coordinates (meters) remain consistent
+        regardless of window size changes.
+
+        Note:
+            If the user has manually zoomed, we preserve their zoom level.
+            Press 'F' to reset view and re-enable auto-fit on resize.
+        """
+        super().resizeEvent(event)
+
+        # Only auto-fit if user hasn't manually zoomed and scene is valid
+        try:
+            if self._fit_in_view_on_resize:
+                rect = self.scene.sceneRect()
+                if rect.isValid() and not rect.isEmpty() and rect.width() > 0 and rect.height() > 0:
+                    self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        except Exception as e:
+            # Prevent crashes from fitInView failures
+            print(f"Warning: fitInView failed in resizeEvent: {e}")
+
+    def showEvent(self, event):
+        """Handle initial show event to set up proper view."""
+        super().showEvent(event)
+
+        # Initial fit to view if scene has content
+        try:
+            rect = self.scene.sceneRect()
+            if rect.isValid() and not rect.isEmpty() and rect.width() > 0 and rect.height() > 0:
+                self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        except Exception as e:
+            # Prevent crashes from fitInView failures
+            print(f"Warning: fitInView failed in showEvent: {e}")
+
     def wheelEvent(self, event):
-        """Zoom with mouse wheel"""
-        config = ConfigManager.instance()
-        zoom_in = event.angleDelta().y() > 0
-        factor = 1.1 if zoom_in else 0.9
-        self.scale(factor, factor)
+        """Zoom with mouse wheel.
+
+        Note:
+            User zoom disables auto-fit on resize. Press 'F' to reset.
+        """
+        # Mark that user has manually zoomed
+        self._user_has_zoomed = True
+        self._fit_in_view_on_resize = False
+
+        self.event_coordinator.handle_wheel(event)
 
     def mousePressEvent(self, event):
-        # Translate Qt event to InputContext
-        # Note: mapToScene(event.pos()) works for QMouseEvent in QGraphicsView
-        from src.core.input_context import InputContext
-        
-        scene_pos = self.mapToScene(event.pos())
-        context = InputContext(
-            scene_pos=scene_pos,
-            screen_pos=event.pos(),
-            buttons=event.buttons(),
-            modifiers=event.modifiers()
-        )
-        
-        if self.current_tool:
-            self.current_tool.on_mouse_press(context)
-            
+        """Handle mouse press events."""
+        self.event_coordinator.handle_mouse_press(event)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        from src.core.input_context import InputContext
-        
-        scene_pos = self.mapToScene(event.pos())
-        context = InputContext(
-            scene_pos=scene_pos,
-            screen_pos=event.pos(),
-            buttons=event.buttons(),
-            modifiers=event.modifiers()
-        )
-
-        if self.current_tool:
-            self.current_tool.on_mouse_move(context)
+        """Handle mouse move events."""
+        self.event_coordinator.handle_mouse_move(event)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        from src.core.input_context import InputContext
-        
-        scene_pos = self.mapToScene(event.pos())
-        context = InputContext(
-            scene_pos=scene_pos,
-            screen_pos=event.pos(),
-            buttons=event.buttons(),
-            modifiers=event.modifiers()
-        )
-
-        if self.current_tool:
-            self.current_tool.on_mouse_release(context)
+        """Handle mouse release events."""
+        self.event_coordinator.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
-        config = ConfigManager.instance()
-        delete_keys = config.get_shortcut("tools", "delete") or ["Delete", "Backspace"]
-        
-        key_map = {
-            "Delete": Qt.Key.Key_Delete,
-            "Backspace": Qt.Key.Key_Backspace,
-        }
-        
-        triggered = False
-        for k_name in delete_keys:
-            if k_name in key_map and event.key() == key_map[k_name]:
-                triggered = True
-                break
-                
-        if triggered:
-            self.delete_selected_items()
-            
+        """Handle keyboard events."""
+        # Check for 'F' key to reset view
+        if event.key() == Qt.Key.Key_F:
+            self.reset_view()
+            return
+
+        handled = self.event_coordinator.handle_key_press(event)
+        if handled:
+            return
         super().keyPressEvent(event)
+
+    def reset_view(self):
+        """Reset view to fit entire scene.
+
+        This re-enables auto-fit on resize and fits the current scene to view.
+        """
+        self._user_has_zoomed = False
+        self._fit_in_view_on_resize = True
+
+        if self.scene.sceneRect().isValid() and not self.scene.sceneRect().isEmpty():
+            self.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         
+    def copy_selection(self):
+        """Copy selected items to clipboard."""
+        self.clipboard_manager.copy_selection()
+
+    def paste_clipboard(self):
+        """Paste clipboard items."""
+        self.clipboard_manager.paste_clipboard()
+
     def delete_selected_items(self):
-        items = self.scene.selectedItems()
-        for item in items:
-            self.scene.removeItem(item)
+        from src.gui.items import RoomItem, NodeItem
+        from src.core.undo_commands import DeleteItemCommand
 
-    def save_to_data(self) -> 'ProjectData':
-        from src.model.data import ProjectData, Wall, Room, Point2D
-        from src.gui.items import NodeItem, EdgeItem, RoomItem
-        
-        data = ProjectData()
-        
-        # Iterate items
-        # We need to capture connected walls and rooms.
-        # Current data model stores Walls and Rooms with coordinates.
-        
-        items = self.scene.items()
-        
-        for item in items:
-            if isinstance(item, EdgeItem):
-                p1 = item.start_node.pos()
-                p2 = item.end_node.pos()
-                wall = Wall(
-                    start=Point2D(p1.x(), p1.y()),
-                    end=Point2D(p2.x(), p2.y())
-                )
-                data.walls.append(wall)
-            elif isinstance(item, RoomItem):
-                points = [Point2D(n.pos().x(), n.pos().y()) for n in item.nodes]
-                room = Room(points=points)
-                room.room_type = item.room_type
-                room.id = item.room_id
-                data.rooms.append(room)
-                
-        return data
+        selected = self.scene.selectedItems()
+        if not selected:
+            return
 
-    def load_from_data(self, data: 'ProjectData'):
-        self.scene.clear()
-        if self.undo_stack:
-            self.undo_stack.clear()
-        
-        # Recreate items
-        from src.gui.items import NodeItem, EdgeItem, RoomItem
-        
-        # Helper to reuse nodes at same position
-        nodes_at_pos = {} # (x, y) -> NodeItem
-        
-        def get_or_create_node(x, y):
-            key = (round(x, 4), round(y, 4))
-            if key in nodes_at_pos:
-                return nodes_at_pos[key]
-            node = NodeItem(x, y)
-            self.scene.addItem(node)
-            nodes_at_pos[key] = node
-            return node
-            
-        # Walls
-        for wall in data.walls:
-            n1 = get_or_create_node(wall.start.x, wall.start.y)
-            n2 = get_or_create_node(wall.end.x, wall.end.y)
-            edge = EdgeItem(n1, n2)
-            self.scene.addItem(edge)
-            
-        # Rooms
-        for room in data.rooms:
-            nodes = []
-            for p in room.points:
-                n = get_or_create_node(p.x, p.y)
-                nodes.append(n)
-            
-            if nodes:
-                poly = RoomItem(nodes, room_type=room.room_type, room_id=room.id)
-                self.scene.addItem(poly)
-                # Ensure edges exist for room boundary? 
-                # User might expect them. For now, following logic of DrawRectTool which adds edges.
-                for i in range(len(nodes)):
-                    n_start = nodes[i]
-                    n_end = nodes[(i+1)%len(nodes)]
-                    # Check if edge exists
-                    existing_edge = False
-                    for edge in n_start.edges:
-                        if edge.end_node == n_end or edge.start_node == n_end:
-                            existing_edge = True
-                            break
-                    if not existing_edge:
-                         edge = EdgeItem(n_start, n_end)
-                         self.scene.addItem(edge)
-                
-        # Background?
-        # Data/JSON currently doesn't refer to the background image file (PLY source or Slice Image).
-        # We might want to keep the current background if just loading annotations, 
-        # or we might need to store the background image path in ProjectData.
-        # For now, we assume the user loads 3D data first, then loads annotations.
-        # But `scene.clear()` wiped the background item! We must restore it if it existed.
-        if self.background_item:
-             # Wait, self.background_item was a wrapper around value. 
-             # But scene.clear() removed it from scene.
-             # We should re-add it.
-             self.scene.addItem(self.background_item)
-             config = ConfigManager.instance()
-             self.background_item.setZValue(config.get_value("colors", "background", "z_value") or -100) # Ensure it's behind
+        # Collect all items to delete: if a RoomItem is selected, also delete its nodes
+        items_to_delete = set(selected)
+        for item in selected:
+            if isinstance(item, RoomItem):
+                for node in item.nodes:
+                    items_to_delete.add(node)
+                    for edge in list(node.edges):
+                        items_to_delete.add(edge)
+
+        cmd = DeleteItemCommand(self.scene, list(items_to_delete), "Delete Items")
+        self.push_command(cmd)
+
+    def update_all_rooms(self):
+        from src.gui.items import RoomItem
+        for item in self.scene.items():
+            if isinstance(item, RoomItem):
+                item.update_style()
+                item.update_overlay()
+
+    def save_to_data(self):
+        """Save canvas data to ProjectData format.
+
+        Returns:
+            ProjectData instance containing all walls and rooms
+        """
+        return self.data_serializer.save_to_data()
+
+    def load_from_data(self, data):
+        """Load canvas data from ProjectData format.
+
+        Args:
+            data: ProjectData instance to load
+        """
+        self.data_serializer.load_from_data(data)

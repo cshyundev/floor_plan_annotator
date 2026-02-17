@@ -8,7 +8,7 @@ import sys
 if not QApplication.instance():
     app = QApplication(sys.argv)
 
-from src.gui.items import NodeItem, EdgeItem, PolygonItem
+from src.gui.items import NodeItem, EdgeItem, RoomItem
 from src.core.config import ConfigManager
 
 class TestItems(unittest.TestCase):

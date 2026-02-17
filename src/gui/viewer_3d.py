@@ -10,92 +10,185 @@ class Viewer3D(QWidget):
         super().__init__()
         self.renderer = None
         self.image = None
-        
+        self._image_data = None  # Store numpy array to prevent garbage collection
+        self._renderer_failed = False  # Track if renderer initialization failed
+        self._shown_once = False  # Track if widget has been shown at least once
+
         # Scene Data
         self.geometry = None
         self.plane_geometry = None
         self.material = None
-        
+        self.geometry_visible = True  # Track original geometry visibility
+
         # Camera State
         self.camera_eye = np.array([0.0, 0.0, 10.0])
         self.camera_center = np.array([0.0, 0.0, 0.0])
         self.camera_up = np.array([0.0, 1.0, 0.0])
         self.fov = 60.0
-        
+
         # Interaction State
         self.last_mouse_pos = QPoint()
         self.is_rotating = False
         self.is_panning = False
-        
+
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        
-        # Initial Material
-        self.material = rendering.MaterialRecord()
-        self.material.shader = "defaultLit"
 
-    def resizeEvent(self, event):
-        w = event.size().width()
-        h = event.size().height()
-        if w > 0 and h > 0:
-            # Recreate renderer on resize (OffscreenRenderer doesn't support resize dynamically easily)
+        # Initial Material
+        try:
+            self.material = rendering.MaterialRecord()
+            self.material.shader = "defaultLit"
+        except Exception as e:
+            print(f"Warning: Failed to create material: {e}")
+            self.material = None
+            self._renderer_failed = True
+
+    def _create_renderer(self, w, h):
+        """Create or recreate the OffscreenRenderer with given dimensions.
+
+        Args:
+            w: Width in pixels
+            h: Height in pixels
+        """
+        try:
+            # Clean up old renderer if it exists
+            if self.renderer is not None:
+                try:
+                    # Clear scene before destroying renderer
+                    self.renderer.scene.clear_geometry()
+                except:
+                    pass
+                # Delete old renderer
+                del self.renderer
+                self.renderer = None
+
+            # Create new renderer
             self.renderer = rendering.OffscreenRenderer(w, h)
             self.renderer.scene.set_background([0.9, 0.9, 0.9, 1.0])
             self.renderer.scene.scene.set_sun_light([0.707, 0.0, -0.707], [1.0, 1.0, 1.0], 75000)
             self.renderer.scene.scene.enable_sun_light(True)
-            
-            # Re-add geometries
-            if self.geometry:
+
+            # Re-add geometries if they exist
+            if self.geometry and self.material:
                 self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
             if self.plane_geometry:
                 mat = rendering.MaterialRecord()
                 mat.shader = "unlitLine"
                 mat.line_width = 2.0
                 self.renderer.scene.add_geometry("plane", self.plane_geometry, mat)
-                
+
             self.render_scene()
+        except Exception as e:
+            # Prevent crashes from renderer creation failures
+            print(f"Warning: Viewer3D renderer creation failed: {e}")
+            print("Viewer3D disabled due to Open3D OffscreenRenderer failure.")
+            print("This is likely due to missing OpenGL support in the environment.")
+            self._renderer_failed = True
+            self.renderer = None
+            self.update()
+
+    def showEvent(self, event):
+        """Mark that widget has been shown - schedule renderer creation."""
+        super().showEvent(event)
+        self._shown_once = True
+
+        # Schedule renderer creation after event processing is complete
+        from PyQt6.QtCore import QTimer
+        def create_renderer_delayed():
+            if not self.renderer and not self._renderer_failed:
+                w, h = self.width(), self.height()
+                if w > 0 and h > 0:
+                    self._create_renderer(w, h)
+
+        QTimer.singleShot(200, create_renderer_delayed)
+
+    def resizeEvent(self, event):
+        """Handle resize event safely to prevent crashes.
+
+        Note: OffscreenRenderer recreation is expensive, so we add safety checks.
+        Defers renderer creation until widget is shown at least once to avoid OpenGL context issues.
+        If renderer fails to initialize, widget gracefully degrades to showing error message.
+        """
+        super().resizeEvent(event)
+
+        w = event.size().width()
+        h = event.size().height()
+
+        # Skip if renderer previously failed
+        if self._renderer_failed:
+            return
+
+        # Skip until widget has been shown at least once
+        if not self._shown_once:
+            return
+
+        # Validate dimensions
+        if w <= 0 or h <= 0:
+            return
+
+        # Create or recreate renderer
+        self._create_renderer(w, h)
 
     def load_geometry(self, file_path):
-        # Load Mesh or Point Cloud
-        geom = o3d.io.read_point_cloud(file_path)
-        if geom.is_empty():
-            geom = o3d.io.read_triangle_mesh(file_path)
-            geom.compute_vertex_normals()
-            if not geom.has_vertex_colors():
-               geom.paint_uniform_color([0.7, 0.7, 0.7])
-        
-        self.original_geometry = geom
-        
-        # Keep a copy for slicing (initially full)
-        import copy
-        self.geometry = copy.deepcopy(self.original_geometry)
-        
-        # Center camera (only on new load)
-        bbox = self.geometry.get_axis_aligned_bounding_box()
-        self.camera_center = bbox.get_center()
-        extent = bbox.get_max_bound() - bbox.get_min_bound()
-        max_extent = max(extent)
-        self.camera_eye = self.camera_center + np.array([0, 0, max_extent * 2.0])
-        self.camera_up = np.array([0, 1, 0])
-        
-        # Setup Plane placeholder
-        self.plane_geometry = o3d.geometry.LineSet()
-        
-        # Update Renderer
-        if self.renderer:
-            self.renderer.scene.clear_geometry()
-            self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
-            
-            mat_plane = rendering.MaterialRecord()
-            mat_plane.shader = "unlitLine"
-            mat_plane.line_width = 2.0
-            self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
-            
-        self.render_scene()
+        """Load 3D geometry from file.
+
+        Note: Gracefully handles renderer failure by loading geometry but not displaying.
+        """
+        if self._renderer_failed:
+            print("Warning: Viewer3D renderer failed, cannot load geometry")
+            return
+
+        try:
+            # Load Mesh or Point Cloud
+            geom = o3d.io.read_point_cloud(file_path)
+            if geom.is_empty():
+                geom = o3d.io.read_triangle_mesh(file_path)
+                geom.compute_vertex_normals()
+                if not geom.has_vertex_colors():
+                    geom.paint_uniform_color([0.7, 0.7, 0.7])
+
+            self.original_geometry = geom
+
+            # Keep a copy for slicing (initially full)
+            import copy
+            self.geometry = copy.deepcopy(self.original_geometry)
+
+            # Center camera (only on new load)
+            bbox = self.geometry.get_axis_aligned_bounding_box()
+            self.camera_center = bbox.get_center()
+            extent = bbox.get_max_bound() - bbox.get_min_bound()
+            max_extent = max(extent)
+            self.camera_eye = self.camera_center + np.array([0, 0, max_extent * 2.0])
+            self.camera_up = np.array([0, 1, 0])
+
+            # Setup Plane placeholder
+            self.plane_geometry = o3d.geometry.LineSet()
+
+            # Update Renderer
+            if self.renderer and self.material:
+                self.renderer.scene.clear_geometry()
+                self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
+
+                mat_plane = rendering.MaterialRecord()
+                mat_plane.shader = "unlitLine"
+                mat_plane.line_width = 2.0
+                self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
+
+            self.render_scene()
+        except Exception as e:
+            print(f"Warning: load_geometry failed: {e}")
 
     def update_slice_plane(self, z_height):
+        """Update the slice plane visualization.
+
+        Note: Gracefully handles renderer failure.
+        """
+        # Skip if renderer failed
+        if self._renderer_failed:
+            return
+
         # 1. Update Slice Plane Visualization
-        if not hasattr(self, 'original_geometry') or not self.original_geometry: 
+        if not hasattr(self, 'original_geometry') or not self.original_geometry:
             return
             
         # 2. Update Plane Geometry (Visual Indicator)
@@ -153,25 +246,70 @@ class Viewer3D(QWidget):
             self.render_scene()
 
     def render_scene(self):
+        """Render the 3D scene to an image.
+
+        CRITICAL: Store numpy array as instance variable to prevent garbage collection!
+        QImage references the numpy array's memory, so we must keep it alive.
+        """
         if not self.renderer:
             return
-            
-        self.renderer.setup_camera(self.fov, self.camera_center, self.camera_eye, self.camera_up)
-        img_np = np.asarray(self.renderer.render_to_image())
-        
-        # Convert to QImage
-        h, w, c = img_np.shape
-        self.image = QImage(img_np.data, w, h, 3 * w, QImage.Format.Format_RGB888)
-        self.update() # Schedule repaint
+
+        try:
+            self.renderer.setup_camera(self.fov, self.camera_center, self.camera_eye, self.camera_up)
+            img_np = np.asarray(self.renderer.render_to_image())
+
+            # CRITICAL: Store copy as instance variable to keep it alive
+            self._image_data = np.copy(img_np)
+
+            # Convert to QImage
+            h, w, c = self._image_data.shape
+            bytes_per_line = 3 * w
+
+            # Create QImage from the stored data
+            q_image = QImage(
+                self._image_data.data,
+                w, h,
+                bytes_per_line,
+                QImage.Format.Format_RGB888
+            )
+
+            # Make another copy to ensure QImage owns its data
+            self.image = q_image.copy()
+
+            self.update()  # Schedule repaint
+        except Exception as e:
+            # Prevent crashes from render failures
+            print(f"Warning: render_scene failed: {e}")
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(240, 240, 240))
-        
-        if self.image:
-            painter.drawImage(0, 0, self.image)
-        else:
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No Data / Loading...")
+        """Paint the 3D view.
+
+        Note: Wrapped in try-except to prevent crashes from paint failures.
+        Shows error message if renderer initialization failed.
+        """
+        try:
+            painter = QPainter(self)
+            painter.fillRect(self.rect(), QColor(240, 240, 240))
+
+            if self._renderer_failed:
+                # Show error message
+                painter.setPen(QColor(200, 0, 0))
+                font = QFont()
+                font.setPointSize(12)
+                painter.setFont(font)
+                painter.drawText(
+                    self.rect(),
+                    Qt.AlignmentFlag.AlignCenter,
+                    "Viewer3D Disabled\n\nOpen3D OffscreenRenderer failed to initialize.\n"
+                    "This is likely due to missing OpenGL support.\n\n"
+                    "The 2D canvas still works normally."
+                )
+            elif self.image:
+                painter.drawImage(0, 0, self.image)
+            else:
+                painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No Data / Loading...")
+        except Exception as e:
+            print(f"Warning: paintEvent failed: {e}")
 
     # --- Interaction ---
     def mousePressEvent(self, event):
@@ -300,6 +438,97 @@ class Viewer3D(QWidget):
         return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
                          [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
                          [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
+
+    # --- Annotation Sync Methods ---
+    def add_room_geometry(self, room_id: str, room_mesh):
+        """
+        Add room floor plane to scene.
+
+        Args:
+            room_id: Unique room identifier
+            room_mesh: TriangleMesh of the room floor plane
+        """
+        if not self.renderer or self._renderer_failed:
+            return
+
+        # Always remove first to prevent duplicate-name silent failure in Open3D
+        self.renderer.scene.remove_geometry(f"room_{room_id}")
+        mat = rendering.MaterialRecord()
+        mat.shader = "defaultLit"
+        self.renderer.scene.add_geometry(f"room_{room_id}", room_mesh, mat)
+        self.render_scene()
+
+    def remove_room_geometry(self, room_id: str):
+        """Remove room floor plane from scene."""
+        if not self.renderer or self._renderer_failed:
+            return
+
+        self.renderer.scene.remove_geometry(f"room_{room_id}")
+        self.render_scene()
+
+    def add_wall_geometry(self, wall_id: str, wall_mesh):
+        """
+        Add virtual wall geometry to scene.
+
+        Creates a 3D wall plane from 2D wall annotation.
+
+        Args:
+            wall_id: Unique identifier for the wall (e.g., "edge_12345")
+            wall_mesh: Open3D TriangleMesh representing the wall
+        """
+        if not self.renderer or self._renderer_failed:
+            return
+
+        # Always remove first to prevent duplicate-name silent failure in Open3D
+        self.renderer.scene.remove_geometry(f"wall_{wall_id}")
+        mat = rendering.MaterialRecord()
+        mat.shader = "defaultLit"
+        self.renderer.scene.add_geometry(f"wall_{wall_id}", wall_mesh, mat)
+        self.render_scene()
+
+    def remove_wall_geometry(self, wall_id: str):
+        """
+        Remove virtual wall geometry from scene.
+
+        Args:
+            wall_id: Unique identifier for the wall to remove
+        """
+        if not self.renderer or self._renderer_failed:
+            return
+
+        # Remove from scene
+        self.renderer.scene.remove_geometry(f"wall_{wall_id}")
+
+        # Re-render
+        self.render_scene()
+
+    def clear_all_walls(self):
+        """Remove all virtual wall geometries from scene."""
+        # Note: This requires tracking wall IDs externally
+        # Current implementation relies on annotation_sync to track and remove individually
+        pass
+
+    def set_geometry_visibility(self, visible: bool):
+        """
+        Toggle visibility of original geometry (point cloud/mesh).
+
+        Args:
+            visible: True to show, False to hide
+        """
+        if not self.renderer or self._renderer_failed:
+            return
+
+        self.geometry_visible = visible
+
+        if visible:
+            # Add geometry back to scene
+            if self.geometry and self.material:
+                self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
+        else:
+            # Remove geometry from scene
+            self.renderer.scene.remove_geometry("geometry")
+
+        self.render_scene()
 
 import math
 

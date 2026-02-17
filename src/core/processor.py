@@ -4,20 +4,75 @@ from scipy import ndimage
 
 class SliceEngine:
     def __init__(self):
-        self._pcd = None
+        self._geometry = None        # Store original (PointCloud or TriangleMesh)
+        self._geometry_type = None   # "pointcloud" or "mesh"
         self._points = None
         self._colors = None
         self._bounds = None
-        
-    def load_data(self, pcd):
-        """Loads Open3D PointCloud data."""
-        self._pcd = pcd
+
+        # Mesh-specific
+        self._mesh = None
+        self._vertices = None
+
+    def load_data(self, geometry):
+        """Loads Open3D PointCloud or TriangleMesh data.
+
+        Args:
+            geometry: Open3D PointCloud or TriangleMesh object
+        """
+        self._geometry = geometry
+
+        # Type detection using duck typing
+        if hasattr(geometry, 'triangles') and hasattr(geometry, 'vertices'):
+            self._geometry_type = "mesh"
+            self._load_mesh(geometry)
+        else:
+            self._geometry_type = "pointcloud"
+            self._load_pointcloud(geometry)
+
+    def _load_pointcloud(self, pcd):
+        """Load point cloud data (existing logic)."""
         self._points = np.asarray(pcd.points)
+
+        # Handle empty point cloud
+        if len(self._points) == 0:
+            self._colors = np.array([])
+            self._bounds = None
+            return
+
         if pcd.has_colors():
             self._colors = np.asarray(pcd.colors)
         else:
             self._colors = np.zeros_like(self._points)
         self._bounds = (self._points.min(axis=0), self._points.max(axis=0))
+
+    def _load_mesh(self, mesh):
+        """Load triangle mesh data.
+
+        Uses mesh vertices as points for slicing. This provides
+        a simple, fast approach that works with the existing slicing
+        algorithm (Z-coordinate filtering).
+        """
+        self._mesh = mesh
+        self._vertices = np.asarray(mesh.vertices)
+
+        # Use vertices as points for slicing
+        self._points = self._vertices
+
+        # Handle empty mesh
+        if len(self._vertices) == 0:
+            self._colors = np.array([])
+            self._bounds = None
+            return
+
+        # Extract colors
+        if mesh.has_vertex_colors():
+            self._colors = np.asarray(mesh.vertex_colors)
+        else:
+            # Default to gray for uncolored meshes
+            self._colors = np.ones_like(self._vertices) * 0.7
+
+        self._bounds = (self._vertices.min(axis=0), self._vertices.max(axis=0))
         
     def get_z_range(self):
         if self._bounds is None:
@@ -25,8 +80,15 @@ class SliceEngine:
         return self._bounds[0][2], self._bounds[1][2]
 
     def slice_at_height(self, z_height, thickness=0.1):
-        """
-        Slices the point cloud at a given z_height with a certain thickness.
+        """Slices geometry at z_height with thickness band.
+
+        Works with both PointCloud and TriangleMesh. For meshes, uses
+        vertices for filtering. For point clouds, uses points directly.
+
+        Args:
+            z_height: Height in meters to slice at
+            thickness: Thickness of the slice band (default 0.1m)
+
         Returns:
             points: Nx3 numpy array of points within the slice
             colors: Nx3 numpy array of colors

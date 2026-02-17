@@ -1,13 +1,24 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QSplitter, QFileDialog, QSlider, QLabel, QDockWidget, QToolBar, QStatusBar)
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                             QSplitter, QFileDialog, QSlider, QLabel, QDockWidget, QToolBar, QStatusBar, QTabWidget, QCheckBox)
 from PyQt6.QtGui import QAction, QIcon, QUndoStack
 from PyQt6.QtCore import Qt
-from src.gui.viewer_3d import Viewer3D
 from src.gui.canvas_2d import Canvas2D
+from src.gui.room_type_editor import RoomTypeEditorWidget
 from src.core.processor import SliceEngine
 import numpy as np
 
 from src.core.config import ConfigManager
+
+# Try to import Viewer3D - let it fail naturally if Open3D doesn't work
+# The Viewer3D class itself handles failures gracefully
+try:
+    from src.gui.viewer_3d import Viewer3D
+    VIEWER3D_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Viewer3D import failed: {e}")
+    print("Using stub implementation")
+    from src.gui.viewer_3d_stub import Viewer3DStub as Viewer3D
+    VIEWER3D_AVAILABLE = False
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -24,15 +35,15 @@ class MainWindow(QMainWindow):
         # Splitter for 3D and 2D views
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.splitter)
-        
-        # 3D Viewer
+
+        # 3D Viewer (real implementation or stub if Open3D not available)
         self.viewer_3d = Viewer3D()
         self.splitter.addWidget(self.viewer_3d)
-        
+
         # 2D Viewer
         self.canvas_2d = Canvas2D()
         self.splitter.addWidget(self.canvas_2d)
-        
+
         # Set initial sizes
         self.splitter.setSizes([600, 600])
         
@@ -46,7 +57,18 @@ class MainWindow(QMainWindow):
         # Data
         self.processor = SliceEngine()
         self.current_z = 0.0
-        
+
+        # Annotation synchronization (2D to 3D)
+        from src.core.annotation_sync import AnnotationSync3D
+        self.annotation_sync = AnnotationSync3D(
+            self.viewer_3d,
+            self.processor,
+            ConfigManager.instance()
+        )
+
+        # Connect undo stack changes to sync
+        self.undo_stack.indexChanged.connect(self.on_undo_stack_changed)
+
         # Menu Bar
         self.create_menu()
 
@@ -102,8 +124,11 @@ class MainWindow(QMainWindow):
         dock = QDockWidget(config.get_string("labels", "controls_dock"), self)
         dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
         
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
+        tab_widget = QTabWidget()
+        
+        # Tab 1: Slice Controls
+        slice_widget = QWidget()
+        layout = QVBoxLayout(slice_widget)
         
         layout.addWidget(QLabel(config.get_string("labels", "slice_height")))
         self.z_slider = QSlider(Qt.Orientation.Horizontal)
@@ -113,9 +138,26 @@ class MainWindow(QMainWindow):
         
         self.z_label = QLabel(config.get_string("labels", "z_value").format(0.0))
         layout.addWidget(self.z_label)
-        
+
+        # Add separator
+        layout.addWidget(QLabel(""))
+
+        # Geometry visibility control
+        self.geometry_visible_checkbox = QCheckBox("Show Original 3D Data")
+        self.geometry_visible_checkbox.setChecked(True)  # Default: show geometry
+        self.geometry_visible_checkbox.stateChanged.connect(self.on_geometry_visibility_changed)
+        layout.addWidget(self.geometry_visible_checkbox)
+
         layout.addStretch()
-        dock.setWidget(widget)
+        tab_widget.addTab(slice_widget, "View Controls")
+        
+        # Tab 2: Room Types
+        self.room_editor = RoomTypeEditorWidget()
+        self.room_editor.set_scene(self.canvas_2d.scene)
+        self.room_editor.config_changed.connect(self.canvas_2d.update_all_rooms)
+        tab_widget.addTab(self.room_editor, "Room Types")
+        
+        dock.setWidget(tab_widget)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
         # Toolbar
@@ -139,11 +181,18 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(rect_action)
         
         self.toolbar.addSeparator()
-        
+
+        delete_action = QAction("Delete", self)
+        delete_action.setShortcut("Delete")
+        delete_action.triggered.connect(self.canvas_2d.delete_selected_items)
+        self.toolbar.addAction(delete_action)
+
+        self.toolbar.addSeparator()
+
         undo_action = self.undo_stack.createUndoAction(self, config.get_string("undo", "undo"))
         undo_action.setShortcut(config.get_shortcut("edit", "undo") or "Ctrl+Z")
         self.toolbar.addAction(undo_action)
-        
+
         redo_action = self.undo_stack.createRedoAction(self, config.get_string("undo", "redo"))
         redo_action.setShortcut(config.get_shortcut("edit", "redo") or "Ctrl+Y")
         self.toolbar.addAction(redo_action)
@@ -160,17 +209,22 @@ class MainWindow(QMainWindow):
             if os.path.exists(p):
                 target_path = p
                 break
-                
+
         if target_path:
             print(f"Auto-loading {target_path} for development...")
-            # Use QTimer to delay load slightly to ensure window is ready
+            # Use QTimer to delay load to ensure window and renderer are ready
             from PyQt6.QtCore import QTimer
-            QTimer.singleShot(500, lambda: self.load_data(target_path))
+            QTimer.singleShot(1000, lambda: self.load_data(target_path))
 
     def load_data(self, file_path):
+        """Load 3D data from file."""
         self.viewer_3d.load_geometry(file_path)
         if self.viewer_3d.geometry:
             self.processor.load_data(self.viewer_3d.geometry)
+
+            # Initialize annotation sync system
+            self.annotation_sync.initialize_geometry(self.viewer_3d.geometry)
+
             self.z_slider.setValue(50)
             self.on_slider_change(50)
 
@@ -184,15 +238,16 @@ class MainWindow(QMainWindow):
             self.update_slice()
 
     def update_slice(self):
+        """Update the slice visualization."""
         # 1. Get Slice
         points, colors = self.processor.slice_at_height(self.current_z, thickness=0.1)
-        
+
         # 2. Project
         img, bounds, scale = self.processor.project_to_image(points, pixel_size=0.02)
-        
+
         # 3. Update 2D
         self.canvas_2d.update_background(img, bounds, scale)
-        
+
         # 4. Update 3D (Show Plane)
         self.viewer_3d.update_slice_plane(self.current_z)
 
@@ -202,3 +257,28 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.load_data(file_path)
+
+    def on_undo_stack_changed(self):
+        """
+        Resync all annotations after any undo stack change.
+
+        This is triggered by:
+        - Room creation (AddItemCommand)
+        - Room drag completion (MoveNodesCommand)
+        - Room type change (ChangeRoomTypeCommand)
+        - Item deletion (DeleteItemCommand)
+        - Undo/redo operations
+        """
+        if self.annotation_sync:
+            self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+
+    def on_geometry_visibility_changed(self, state):
+        """
+        Handle geometry visibility checkbox change.
+
+        Args:
+            state: Qt.CheckState (Checked = show, Unchecked = hide)
+        """
+        from PyQt6.QtCore import Qt
+        visible = (state == Qt.CheckState.Checked.value)
+        self.viewer_3d.set_geometry_visibility(visible)

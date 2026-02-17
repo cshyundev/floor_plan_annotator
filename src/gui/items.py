@@ -11,7 +11,7 @@ class NodeItem(QGraphicsEllipseItem):
     def __init__(self, x, y, radius=None):
         config = ConfigManager.instance()
         if radius is None:
-            radius = config.get_value("colors", "node", "radius") or 4
+            radius = config.get_value("colors", "node", "radius") or 0.05
             
         super().__init__(-radius, -radius, radius*2, radius*2)
         self.setPos(x, y)
@@ -19,8 +19,9 @@ class NodeItem(QGraphicsEllipseItem):
         # Style
         brush_color = config.get_color("node", "brush")
         pen_color = config.get_color("node", "pen")
+        pen_width = config.get_value("colors", "node", "pen_width") or 0.01
         self.setBrush(QBrush(brush_color))
-        self.setPen(QPen(pen_color, 1))
+        self.setPen(QPen(pen_color, pen_width))
         self.setZValue(config.get_value("colors", "node", "z_value") or 100)
         
         # Hover settings
@@ -31,12 +32,30 @@ class NodeItem(QGraphicsEllipseItem):
         self.hover_scale = config.get_value("colors", "node", "hover", "scale") or 1.5
 
         # Interaction
-        self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable | 
+        self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
                       QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
                       QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
-                      
+
+        self._drag_start_pos = None
         self.edges = [] # List of connected EdgeItems
         self.polygons = [] # List of connected PolygonItems
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = self.pos()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start_pos is not None:
+            new_pos = self.pos()
+            if new_pos != self._drag_start_pos:
+                views = self.scene().views()
+                if views and hasattr(views[0], 'push_command'):
+                    from src.core.undo_commands import MoveNodeCommand
+                    cmd = MoveNodeCommand(self, self._drag_start_pos, new_pos)
+                    views[0].push_command(cmd)
+            self._drag_start_pos = None
 
     def hoverEnterEvent(self, event):
         self.setScale(self.hover_scale)
@@ -74,7 +93,10 @@ class EdgeItem(QGraphicsLineItem):
         super().__init__()
         self.start_node = start_node
         self.end_node = end_node
-        
+
+        # Generate unique ID for 3D wall geometry tracking
+        self.edge_id = f"edge_{id(self)}"
+
         # Register self to nodes
         self.start_node.add_edge(self)
         self.end_node.add_edge(self)
@@ -82,10 +104,10 @@ class EdgeItem(QGraphicsLineItem):
         # Style
         config = ConfigManager.instance()
         default_color = config.get_color("wall", "default", "color")
-        default_width = config.get_value("colors", "wall", "default", "width") or 3
-        
+        default_width = config.get_value("colors", "wall", "default", "width") or 0.02
+
         selected_color = config.get_color("wall", "selected", "color")
-        selected_width = config.get_value("colors", "wall", "selected", "width") or 3
+        selected_width = config.get_value("colors", "wall", "selected", "width") or 0.03
         
         self.pen_default = QPen(default_color, default_width)
         self.pen_selected = QPen(selected_color, selected_width)
@@ -131,48 +153,59 @@ class RoomItem(QGraphicsPathItem):
         # Config
         self.update_style()
         
-        # Label
+        # Label (scaled to match scene coordinates - meters)
         self.label = QGraphicsTextItem(self)
-        self.label.setHtml(f"<div style='background-color:rgba(255,255,255,150);'>{self.get_label_text()}</div>")
-        self.label.setPos(0, 0)
+        config = ConfigManager.instance()
+        label_scale = config.get_value("colors", "room", "label_scale") or 0.015
+        self.label.setScale(label_scale)
+        self.update_overlay()
         
         # Interaction flags
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
+            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
         self.setAcceptHoverEvents(True)
         
-        # Rotation Handle
-        self.rotation_handle = QGraphicsRectItem(-5, -5, 10, 10, self)
+        # Rotation Handle (size in scene coordinates - meters)
+        handle_size = 0.1  # 10cm x 10cm
+        self.rotation_handle = QGraphicsRectItem(-handle_size/2, -handle_size/2, handle_size, handle_size, self)
         self.rotation_handle.setBrush(QBrush(Qt.GlobalColor.blue))
-        self.rotation_handle.setPen(QPen(Qt.GlobalColor.white))
+        self.rotation_handle.setPen(QPen(Qt.GlobalColor.white, 0.01))
         self.rotation_handle.setVisible(False)
         self.rotation_handle.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
         
         self.update_shape()
 
+    def update_overlay(self):
+        self.label.setHtml(f"<div style='background-color:rgba(255,255,255,150);'>{self.get_label_text()}</div>")
+        self.update_label_pos()
+
     def get_label_text(self):
         config = ConfigManager.instance()
         type_conf = config.get_room_type(self.room_type)
         type_name = type_conf.get("name", self.room_type) if type_conf else self.room_type
-        # Show ID short version
-        short_id = self.room_id[:4] if self.room_id else "?"
-        return f"{type_name} ({short_id})"
+        display_id = self.room_id if self.room_id else "?"
+        return f"{type_name} ({display_id})"
 
     def update_style(self):
         config = ConfigManager.instance()
         type_conf = config.get_room_type(self.room_type) or config.get_room_type(config.get_value("rooms", "default_type"))
-        
+
+        # Pen color from config (room.edge.color) - blue by default
+        pen_color = config.get_color("room", "edge", "color")
+        pen_width = config.get_value("colors", "room", "edge", "width") or 0.02
+
         if type_conf:
-             c = type_conf.get("color", [200, 200, 200, 100])
-             b = type_conf.get("border", [100, 100, 100])
-             brush_color = QColor(*c)
-             pen_color = QColor(*b)
-             self.__brush_color = brush_color # Store for hover
+            c = type_conf.get("color", [200, 200, 200, 100])
+            brush_color = QColor(*c)
+            self.__brush_color = brush_color
         else:
-             brush_color = QColor(200, 200, 200, 100)
-             pen_color = QColor(100, 100, 100)
-             self.__brush_color = brush_color
+            brush_color = QColor(200, 200, 200, 100)
+            self.__brush_color = brush_color
 
         self.setBrush(QBrush(brush_color))
-        self.setPen(QPen(pen_color, 2))
+        self.setPen(QPen(pen_color, pen_width))
         self.setZValue(config.get_value("colors", "room", "z_value") or 40)
 
     def update_shape(self):
@@ -206,8 +239,10 @@ class RoomItem(QGraphicsPathItem):
         self.label.setPos(self._centroid.x() - rect.width()/2, self._centroid.y() - rect.height()/2)
 
     def update_handle_pos(self):
-        # Place handle slightly above centroid
-        self.rotation_handle.setPos(self._centroid.x(), self._centroid.y() - 30)
+        """Place rotation handle above centroid."""
+        config = ConfigManager.instance()
+        offset = config.get_value("colors", "room", "rotation_handle_offset") or 30
+        self.rotation_handle.setPos(self._centroid.x(), self._centroid.y() - offset)
 
     def hoverEnterEvent(self, event):
         self.setBrush(QBrush(self.__brush_color.lighter(110)))
@@ -228,15 +263,15 @@ class RoomItem(QGraphicsPathItem):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self.setSelected(True)
+
             # Check if clicked on rotation handle
-            # Handle is child, but mapFromScene might help
             handle_map_pos = self.rotation_handle.mapFromScene(event.scenePos())
             if self.rotation_handle.contains(handle_map_pos) and self.rotation_handle.isVisible():
                 self._rotating = True
                 self._drag_start_pos = event.scenePos()
                 self._initial_node_positions = [n.pos() for n in self.nodes]
-                
-                # Calculate initial angle of mouse relative to centroid
+
                 delta = event.scenePos() - self._centroid
                 import math
                 self._initial_angle = math.atan2(delta.y(), delta.x())
@@ -287,11 +322,71 @@ class RoomItem(QGraphicsPathItem):
 
     def mouseReleaseEvent(self, event):
         if self._dragging or self._rotating:
+            new_positions = [QPointF(n.pos()) for n in self.nodes]
+            changed = any(
+                new_positions[i] != self._initial_node_positions[i]
+                for i in range(len(self.nodes))
+            )
+            if changed:
+                views = self.scene().views()
+                if views and hasattr(views[0], 'push_command'):
+                    from src.core.undo_commands import MoveNodesCommand
+                    cmd = MoveNodesCommand(
+                        self.nodes,
+                        [QPointF(p) for p in self._initial_node_positions],
+                        new_positions
+                    )
+                    views[0].push_command(cmd)
             self._dragging = False
             self._rotating = False
-            # Create undo command? 
-            # Ideally yes, but multiple node moves need a MultiMoveCommand or similar.
-            # providing just visual feedback for now.
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        from PyQt6.QtWidgets import QMenu
+        from src.core.undo_commands import ChangeRoomTypeCommand
+        
+        menu = QMenu()
+        config = ConfigManager.instance()
+        types = config.get_room_types()
+        
+        # Sort by index
+        sorted_keys = sorted(types.keys(), key=lambda k: types[k].get("index", 0))
+        
+        for key in sorted_keys:
+            t_data = types[key]
+            action = menu.addAction(t_data["name"])
+            
+            # visual check if current
+            if key == self.room_type:
+                action.setCheckable(True)
+                action.setChecked(True)
+                
+            def make_callback(k):
+                return lambda: self.change_type(k)
+                
+            action.triggered.connect(make_callback(key))
+            
+        menu.exec(event.screenPos())
+        event.accept()
+
+    def change_type(self, new_type):
+        if new_type == self.room_type:
+            return
+            
+        # Get canvas to push command
+        # scene.views() returns list of QGraphicsView
+        views = self.scene().views()
+        if views:
+            canvas = views[0]
+            # Verify it has push_command
+            if hasattr(canvas, "push_command"):
+                from src.core.undo_commands import ChangeRoomTypeCommand
+                cmd = ChangeRoomTypeCommand(self, self.room_type, new_type)
+                canvas.push_command(cmd)
+            else:
+                # Fallback if not attached to Canvas2D properly
+                self.room_type = new_type
+                self.update_style()
+                self.update_overlay()

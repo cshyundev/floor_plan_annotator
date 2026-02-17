@@ -1,0 +1,48 @@
+# UI Configuration
+# This file contains all non-color UI settings including:
+# - Dimensions (sizes in meters or pixels)
+# - Behavior settings (zoom limits, snap tolerance, etc.)
+# - Rendering order (z_values)
+#
+# For color settings, see colors.yaml
+
+grid:
+  width: 0  # Grid line width
+
+canvas:
+  min_zoom: 10.0   # Minimum zoom level (prevent zooming out too far)
+  max_zoom: 80.0   # Maximum zoom level (prevent zooming in too far)
+
+node:
+  pen_width: 0.01       # Meters - node outline width in scene coordinates (1cm)
+  radius: 0.05          # Meters - node display size in scene coordinates (5cm)
+  z_value: 100          # Rendering layer order (higher = on top)
+  snap_tolerance: 10    # Pixels - distance to snap to existing node
+  hover:
+    scale: 1.5          # Scale multiplier when hovering over node
+
+wall:
+  default:
+    width: 0.02         # Meters - wall line width in scene coordinates (2cm)
+  selected:
+    width: 0.03         # Meters - selected wall line width (3cm)
+  z_value: 50           # Rendering layer order
+
+room:
+  width: 0.02                   # Meters - room boundary line width in scene coordinates (2cm)
+  z_value: 40                   # Rendering layer order
+  rotation_handle_offset: 30    # Pixels - distance of rotation handle from centroid
+  label_scale: 0.08             # Scale factor for room label text (smaller = smaller text)
+  edge:
+    width: 0.02                 # Meters - room edge line width (2cm)
+    snap_tolerance: 15          # Pixels - distance to snap to first node when closing polygon
+  paste_offset: 20              # Pixels - offset when pasting copied items
+
+background:
+  z_value: -100                 # Rendering layer order (background is bottom layer)
+
+annotation_3d:
+  wall_height: 1.5              # Meters - virtual wall height for 3D visualization
+  floor_z_level: 0.0            # Z level for room floor planes
+  enable_room_planes: true      # Toggle room polygon planes in 3D viewer
+  enable_wall_geometry: true    # Toggle virtual wall planes in 3D viewer

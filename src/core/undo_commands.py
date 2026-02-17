@@ -65,3 +65,20 @@ class MoveNodesCommand(QUndoCommand):
     def redo(self):
         for i, node in enumerate(self.nodes):
             node.setPos(self.new_positions[i])
+
+class ChangeRoomTypeCommand(QUndoCommand):
+    def __init__(self, room_item, old_type, new_type):
+        super().__init__(f"Change Room Type to {new_type}")
+        self.room_item = room_item
+        self.old_type = old_type
+        self.new_type = new_type
+
+    def redo(self):
+        self.room_item.room_type = self.new_type
+        self.room_item.update_style()
+        self.room_item.update_overlay()
+
+    def undo(self):
+        self.room_item.room_type = self.old_type
+        self.room_item.update_style()
+        self.room_item.update_overlay()

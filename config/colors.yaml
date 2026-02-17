@@ -1,32 +1,27 @@
+# Color Configuration
+# This file contains all color settings for UI elements.
+# For other UI settings (sizes, behavior, z_values), see ui_config.yaml
 
 grid:
-  color: [60, 60, 60]
-  width: 0
+  color: [60, 60, 60]  # RGB - Grid line color
 
 node:
-  brush: "yellow"
-  pen: "black"
-  radius: 4
-  z_value: 100
+  brush: "yellow"      # Node fill color
+  pen: "black"         # Node outline color
   hover:
-    scale: 1.5
-    brush: "orange"
+    brush: "orange"    # Node fill color when hovering
 
 wall:
   default:
-    color: [200, 200, 200]
-    width: 3
+    color: [200, 200, 200]  # RGB - Default wall color
   selected:
-    color: [255, 100, 100]
-    width: 3
-  z_value: 50
+    color: [255, 100, 100]  # RGB - Selected wall color
 
 room:
-  brush: [100, 100, 255, 100] # R, G, B, A
-  pen: [100, 100, 255]
-  width: 2
-  z_value: 40
+  brush: [100, 100, 255, 100]  # RGBA - Room fill color (semi-transparent blue)
+  pen: [100, 100, 255]         # RGB - Room outline color
+  edge:
+    color: [0, 0, 255]         # RGB - Room polygon edge color (blue)
 
 background:
-  color: [240, 240, 240] # Viewer3D background
-  z_value: -100 # Canvas2D background item
+  color: [240, 240, 240]       # RGB - Viewer3D background color (light gray)
