@@ -14,3 +14,10 @@
 - [REQ-010: Interactive Slice Height Control](REQ-010.md) — Implemented
 - [REQ-011: Dual View Layout](REQ-011.md) — Implemented
 - [REQ-012: Configurable Settings](REQ-012.md) — Implemented
+- [REQ-013: Custom Polygon Annotation](REQ-013.md) — Implemented
+- [REQ-014: Object Annotation (OBB)](REQ-014.md) — Implemented
+- [REQ-015: Clipboard Operations](REQ-015.md) — Implemented
+- [REQ-016: Theming System](REQ-016.md) — Implemented
+- [REQ-017: 3D Annotation Sync](REQ-017.md) — Implemented
+- [REQ-018: Type Management System](REQ-018.md) — Implemented
+- [REQ-019: Annotation Interaction Rules](REQ-019.md) — Implemented

@@ -66,6 +66,70 @@ class MoveNodesCommand(QUndoCommand):
         for i, node in enumerate(self.nodes):
             node.setPos(self.new_positions[i])
 
+class ChangeCustomPolygonTypeCommand(QUndoCommand):
+    def __init__(self, polygon_item, old_type, new_type):
+        super().__init__(f"Change Custom Polygon Type to {new_type}")
+        self.polygon_item = polygon_item
+        self.old_type = old_type
+        self.new_type = new_type
+
+    def redo(self):
+        self.polygon_item.polygon_type = self.new_type
+        self.polygon_item.update_style()
+        self.polygon_item.update_overlay()
+
+    def undo(self):
+        self.polygon_item.polygon_type = self.old_type
+        self.polygon_item.update_style()
+        self.polygon_item.update_overlay()
+
+
+class ChangeObjectTypeCommand(QUndoCommand):
+    def __init__(self, object_item, old_type, new_type):
+        super().__init__(f"Change Object Type to {new_type}")
+        self.object_item = object_item
+        self.old_type = old_type
+        self.new_type = new_type
+
+    def redo(self):
+        self.object_item.object_type = self.new_type
+        self.object_item.update_style()
+
+    def undo(self):
+        self.object_item.object_type = self.old_type
+        self.object_item.update_style()
+
+
+class TransformObjectCommand(QUndoCommand):
+    """Undo command for any OBB transformation (move/resize/rotate)."""
+
+    def __init__(self, object_item, old_state, new_state):
+        """
+        Args:
+            object_item: ObjectItem
+            old_state: (center, width, height, angle)
+            new_state: (center, width, height, angle)
+        """
+        super().__init__("Transform Object")
+        self.object_item = object_item
+        self.old_state = old_state
+        self.new_state = new_state
+
+    def _apply(self, state):
+        center, width, height, angle = state
+        self.object_item.center = center
+        self.object_item.width = width
+        self.object_item.height = height
+        self.object_item.angle = angle
+        self.object_item.update_shape()
+
+    def redo(self):
+        self._apply(self.new_state)
+
+    def undo(self):
+        self._apply(self.old_state)
+
+
 class ChangeRoomTypeCommand(QUndoCommand):
     def __init__(self, room_item, old_type, new_type):
         super().__init__(f"Change Room Type to {new_type}")

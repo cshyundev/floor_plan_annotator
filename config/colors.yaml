@@ -1,27 +1,74 @@
-# Color Configuration
-# This file contains all color settings for UI elements.
+# Color Configuration — Dark Theme (Foxglove/Omniverse style)
+# Deep charcoal backgrounds with blue-cyan accent.
 # For other UI settings (sizes, behavior, z_values), see ui_config.yaml
 
 grid:
-  color: [60, 60, 60]  # RGB - Grid line color
+  color: [46, 51, 64]           # #2E3340 — subtle grid lines
 
 node:
-  brush: "yellow"      # Node fill color
-  pen: "black"         # Node outline color
+  brush: [255, 215, 64]         # #FFD740 — bright amber (high contrast on dark)
+  pen: [26, 29, 38]             # #1A1D26 — dark outline blends with background
   hover:
-    brush: "orange"    # Node fill color when hovering
+    brush: [255, 171, 64]       # #FFAB40 — warm orange hover
 
 wall:
   default:
-    color: [200, 200, 200]  # RGB - Default wall color
+    color: [112, 136, 160]      # #7088A0 — muted blue-gray
   selected:
-    color: [255, 100, 100]  # RGB - Selected wall color
+    color: [255, 107, 107]      # #FF6B6B — soft red selection
 
 room:
-  brush: [100, 100, 255, 100]  # RGBA - Room fill color (semi-transparent blue)
-  pen: [100, 100, 255]         # RGB - Room outline color
+  brush: [79, 195, 247, 60]     # #4FC3F7 @ 24% — accent blue, very transparent
+  pen: [79, 195, 247]           # #4FC3F7 — accent blue outline
   edge:
-    color: [0, 0, 255]         # RGB - Room polygon edge color (blue)
+    color: [79, 195, 247]       # #4FC3F7 — accent blue edge
 
 background:
-  color: [240, 240, 240]       # RGB - Viewer3D background color (light gray)
+  color: [18, 20, 26]           # #12141A — darkest background
+
+# Canvas (QGraphicsView) background
+canvas:
+  background: [18, 20, 26]      # #12141A — darkest background
+
+# Annotation item handles (rotation, corner, dash line)
+handle:
+  fill: [79, 195, 247]          # #4FC3F7 — accent blue
+  outline: [224, 228, 236]      # #E0E4EC — light text color
+  corner_fill: [224, 228, 236]  # #E0E4EC — bright corners on dark
+  corner_outline: [26, 29, 38]  # #1A1D26 — dark outline
+  dash: [79, 195, 247]          # #4FC3F7 — accent blue dash line
+
+# Object-specific colors
+object:
+  arrow: [224, 96, 96]          # #E06060 — danger red for orientation
+
+# Label styling
+label:
+  background: "rgba(26,29,38,200)"  # Semi-transparent dark label background
+
+# Canvas world-coordinate axes
+axes:
+  x: [224, 96, 96]              # #E06060 — red X-axis
+  y: [96, 192, 128]             # #60C080 — green Y-axis
+
+# 3D viewer stub widget
+viewer_3d:
+  background: [18, 20, 26]      # #12141A — matches canvas
+  text: [136, 144, 160]         # #8890A0 — secondary text
+
+# Fallback colors when no type config exists (brighter for dark backgrounds)
+fallback:
+  room:
+    fill: [79, 195, 247, 50]          # accent blue, very transparent
+  custom_polygon:
+    fill: [96, 192, 128, 60]          # success green, transparent
+    border: [96, 192, 128]            # success green
+  object:
+    fill: [79, 195, 247, 60]          # accent blue, transparent
+    border: [109, 208, 250]           # accent-hover blue
+
+# Tool preview (non-interactive drag previews)
+tool_preview:
+  object:
+    border: [79, 195, 247]            # accent blue
+    fill: [79, 195, 247, 40]          # accent blue, very transparent

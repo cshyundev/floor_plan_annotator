@@ -121,6 +121,67 @@ class WallGeometryBuilder:
         return mesh
 
 
+class ObjectGeometryBuilder:
+    """
+    Creates 3D OBB box meshes for object annotations.
+    """
+
+    def create_object_box(self, center: Tuple[float, float], width: float, height: float,
+                          angle: float, z_min: float, z_max: float,
+                          color: Tuple[float, float, float]) -> o3d.geometry.TriangleMesh:
+        """
+        Create a 3D oriented bounding box mesh.
+
+        Args:
+            center: (x, y) center position
+            width: Box width in scene units
+            height: Box height in scene units
+            angle: Rotation angle in degrees
+            z_min: Bottom z coordinate
+            z_max: Top z coordinate
+            color: RGB tuple in [0-1] range
+
+        Returns:
+            Open3D TriangleMesh of the oriented box
+        """
+        import math
+        cx, cy = center
+        w, h = width / 2, height / 2
+        rad = math.radians(angle)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+
+        # 4 corner offsets in local frame
+        local_corners = [(-w, -h), (w, -h), (w, h), (-w, h)]
+
+        # Compute 8 3D vertices (4 bottom + 4 top)
+        vertices = []
+        for z in [z_min, z_max]:
+            for dx, dy in local_corners:
+                rx = dx * cos_a - dy * sin_a
+                ry = dx * sin_a + dy * cos_a
+                vertices.append([cx + rx, cy + ry, z])
+
+        # 12 triangles forming the 6 faces (2 triangles each)
+        triangles = [
+            # Bottom face (0-3)
+            [0, 1, 2], [0, 2, 3],
+            # Top face (4-7)
+            [4, 6, 5], [4, 7, 6],
+            # Side faces
+            [0, 4, 1], [1, 4, 5],
+            [1, 5, 2], [2, 5, 6],
+            [2, 6, 3], [3, 6, 7],
+            [3, 7, 0], [0, 7, 4],
+        ]
+
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        mesh.triangles = o3d.utility.Vector3iVector(triangles)
+        mesh.paint_uniform_color(color)
+        mesh.compute_vertex_normals()
+        return mesh
+
+
 class AnnotationSync3D:
     """
     Central coordinator for 2D-3D annotation synchronization.
@@ -145,10 +206,36 @@ class AnnotationSync3D:
         # Builders for creating annotation geometries
         self.room_builder = RoomPlaneBuilder()
         self.wall_builder = WallGeometryBuilder()
+        self.object_builder = ObjectGeometryBuilder()
+
+        # World bounds for coordinate conversion (scene Y → world Y)
+        self._world_bounds = None  # (min_x, min_y, max_x, max_y)
 
         # Track created geometries
         self.room_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
         self.wall_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
+        self.custom_polygon_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
+        self.object_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
+
+    def set_world_bounds(self, bounds):
+        """Store world bounding box for scene→world Y-axis conversion.
+
+        Args:
+            bounds: (min_x, min_y, max_x, max_y) from project_to_image
+        """
+        self._world_bounds = bounds
+
+    def _to_world_y(self, scene_y: float) -> float:
+        """Convert Qt scene Y coordinate to 3D world Y coordinate.
+
+        Qt scene has +Y pointing down; 3D world has +Y pointing up.
+        The background image is Y-flipped in project_to_image, so
+        scene_y=min_y corresponds to world max_y and vice versa.
+        """
+        if self._world_bounds is None:
+            return scene_y
+        min_y, max_y = self._world_bounds[1], self._world_bounds[3]
+        return (max_y + min_y) - scene_y
 
     def initialize_geometry(self, geometry):
         """
@@ -173,11 +260,14 @@ class AnnotationSync3D:
             room_item: RoomItem instance from canvas
         """
         # Check if room planes are enabled
-        if not self.config.get_value("ui_config", "annotation_3d", "enable_room_planes"):
+        if not self.config.get_ui_value("annotation_3d", "enable_room_planes"):
             return
 
-        # Extract polygon from room nodes
-        polygon_2d = [node.pos() for node in room_item.nodes]
+        # Extract polygon from room nodes and convert to world coordinates
+        polygon_2d = [
+            QPointF(node.pos().x(), self._to_world_y(node.pos().y()))
+            for node in room_item.nodes
+        ]
 
         # Get room color from config
         room_type_conf = self.config.get_room_type(room_item.room_type)
@@ -189,9 +279,7 @@ class AnnotationSync3D:
             color = (0.7, 0.7, 0.7)  # Default gray
 
         # Get floor z level from config
-        z_level = self.config.get_value("ui_config", "annotation_3d", "floor_z_level")
-        if z_level is None:
-            z_level = 0.0
+        z_level = self.config.get_ui_value("annotation_3d", "floor_z_level")
 
         # Create room plane mesh
         room_mesh = self.room_builder.create_room_plane(polygon_2d, z_level, color)
@@ -214,17 +302,21 @@ class AnnotationSync3D:
         Args:
             edge_item: EdgeItem instance from canvas
         """
-        if not self.config.get_value("ui_config", "annotation_3d", "enable_wall_geometry"):
+        if not self.config.get_ui_value("annotation_3d", "enable_wall_geometry"):
             return
 
         # Get wall height from config
-        wall_height = self.config.get_value("ui_config", "annotation_3d", "wall_height")
-        if wall_height is None:
-            wall_height = 1.5
+        wall_height = self.config.get_ui_value("annotation_3d", "wall_height")
 
-        # Get start and end positions
-        start_2d = edge_item.start_node.pos()
-        end_2d = edge_item.end_node.pos()
+        # Get start and end positions (converted to world coordinates)
+        start_2d = QPointF(
+            edge_item.start_node.pos().x(),
+            self._to_world_y(edge_item.start_node.pos().y())
+        )
+        end_2d = QPointF(
+            edge_item.end_node.pos().x(),
+            self._to_world_y(edge_item.end_node.pos().y())
+        )
 
         # Get wall color from config
         wall_color_rgb = self.config.get_color("wall", "default", "color")
@@ -253,6 +345,75 @@ class AnnotationSync3D:
         # Add new wall
         self.wall_geometries[edge_id] = wall_mesh
         self.viewer.add_wall_geometry(edge_id, wall_mesh)
+
+    def sync_custom_polygon_annotation(self, polygon_item):
+        """Create/update 3D plane for a custom polygon annotation."""
+        if not self.config.get_ui_value("annotation_3d", "enable_custom_polygon_planes"):
+            return
+
+        polygon_2d = [
+            QPointF(node.pos().x(), self._to_world_y(node.pos().y()))
+            for node in polygon_item.nodes
+        ]
+
+        poly_type_conf = self.config.get_custom_polygon_type(polygon_item.polygon_type)
+        if poly_type_conf:
+            color_rgba = poly_type_conf.get("color", [100, 220, 100, 100])
+            color = (color_rgba[0] / 255.0, color_rgba[1] / 255.0, color_rgba[2] / 255.0)
+        else:
+            color = (0.4, 0.85, 0.4)
+
+        z_level = self.config.get_ui_value("annotation_3d", "floor_z_level")
+
+        mesh = self.room_builder.create_room_plane(polygon_2d, z_level, color)
+
+        polygon_id = polygon_item.polygon_id
+        if polygon_id in self.custom_polygon_geometries:
+            self.viewer.remove_custom_polygon_geometry(polygon_id)
+
+        self.custom_polygon_geometries[polygon_id] = mesh
+        self.viewer.add_custom_polygon_geometry(polygon_id, mesh)
+
+    def sync_object_annotation(self, object_item):
+        """Create/update 3D OBB box for an object annotation."""
+        if not self.config.get_ui_value("annotation_3d", "enable_object_boxes"):
+            return
+
+        obj_type_conf = self.config.get_object_type(object_item.object_type)
+        if obj_type_conf:
+            color_rgba = obj_type_conf.get("color", [150, 200, 255, 150])
+            color = (color_rgba[0] / 255.0, color_rgba[1] / 255.0, color_rgba[2] / 255.0)
+        else:
+            color = (0.6, 0.78, 1.0)
+
+        z_min = self.config.get_ui_value("annotation_3d", "floor_z_level")
+        obj_height = self.config.get_ui_value("annotation_3d", "object_height")
+        z_max = z_min + obj_height
+
+        center = (object_item.center.x(), self._to_world_y(object_item.center.y()))
+        mesh = self.object_builder.create_object_box(
+            center, object_item.width, object_item.height,
+            object_item.angle, z_min, z_max, color
+        )
+
+        object_id = object_item.object_id
+        if object_id in self.object_geometries:
+            self.viewer.remove_object_geometry(object_id)
+
+        self.object_geometries[object_id] = mesh
+        self.viewer.add_object_geometry(object_id, mesh)
+
+    def remove_custom_polygon_annotation(self, polygon_id: str):
+        """Remove custom polygon plane geometry."""
+        if polygon_id in self.custom_polygon_geometries:
+            self.viewer.remove_custom_polygon_geometry(polygon_id)
+            del self.custom_polygon_geometries[polygon_id]
+
+    def remove_object_annotation(self, object_id: str):
+        """Remove object box geometry."""
+        if object_id in self.object_geometries:
+            self.viewer.remove_object_geometry(object_id)
+            del self.object_geometries[object_id]
 
     def remove_room_annotation(self, room_id: str):
         """
@@ -285,18 +446,25 @@ class AnnotationSync3D:
         Args:
             scene: QGraphicsScene containing all annotation items
         """
-        # Clear all room geometries
+        # Clear all existing geometries
         for room_id in list(self.room_geometries.keys()):
             self.viewer.remove_room_geometry(room_id)
         self.room_geometries.clear()
 
-        # Clear all wall geometries
         for edge_id in list(self.wall_geometries.keys()):
             self.viewer.remove_wall_geometry(edge_id)
         self.wall_geometries.clear()
 
+        for polygon_id in list(self.custom_polygon_geometries.keys()):
+            self.viewer.remove_custom_polygon_geometry(polygon_id)
+        self.custom_polygon_geometries.clear()
+
+        for object_id in list(self.object_geometries.keys()):
+            self.viewer.remove_object_geometry(object_id)
+        self.object_geometries.clear()
+
         # Import here to avoid circular dependency
-        from src.gui.items import RoomItem, EdgeItem
+        from src.gui.items import RoomItem, EdgeItem, CustomPolygonItem, ObjectItem
 
         # Rebuild all annotations from scene
         for item in scene.items():
@@ -304,3 +472,7 @@ class AnnotationSync3D:
                 self.sync_room_annotation(item)
             elif isinstance(item, EdgeItem):
                 self.sync_wall_annotation(item)
+            elif isinstance(item, CustomPolygonItem):
+                self.sync_custom_polygon_annotation(item)
+            elif isinstance(item, ObjectItem):
+                self.sync_object_annotation(item)

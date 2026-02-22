@@ -10,6 +10,7 @@ from src.core.input_context import InputContext
 
 class Canvas2D(QGraphicsView):
     status_message = pyqtSignal(str)
+    tool_changed = pyqtSignal(str)
 
     def __init__(self, main_window=None):
         super().__init__()
@@ -26,8 +27,10 @@ class Canvas2D(QGraphicsView):
         self._user_has_zoomed = False  # Track if user manually zoomed
         self._fit_in_view_on_resize = True  # Whether to auto-fit on resize
 
-        # Sequential room ID counter
+        # Sequential ID counters
         self._next_room_id = 0
+        self._next_custom_polygon_id = 0
+        self._next_object_id = 0
 
         # Tool Manager
         self.tool_manager = ToolManager(self)
@@ -44,6 +47,12 @@ class Canvas2D(QGraphicsView):
         # Enable smooth transformations
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+        # Canvas background color from config
+        config = ConfigManager.instance()
+        canvas_bg = config.get_color("canvas", "background")
+        self.setBackgroundBrush(canvas_bg)
+        self.scene.setBackgroundBrush(canvas_bg)
 
         # Set view properties for better resize handling
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
@@ -91,6 +100,18 @@ class Canvas2D(QGraphicsView):
         self._next_room_id += 1
         return str(rid)
 
+    def next_custom_polygon_id(self):
+        """Return the next sequential custom polygon ID and increment counter."""
+        pid = self._next_custom_polygon_id
+        self._next_custom_polygon_id += 1
+        return str(pid)
+
+    def next_object_id(self):
+        """Return the next sequential object ID and increment counter."""
+        oid = self._next_object_id
+        self._next_object_id += 1
+        return str(oid)
+
     def set_tool(self, tool_name):
         """Switch to the specified tool.
 
@@ -98,6 +119,7 @@ class Canvas2D(QGraphicsView):
             tool_name: Name of the tool ("select", "wall", or "room")
         """
         self.tool_manager.set_tool(tool_name)
+        self.tool_changed.emit(tool_name)
             
     def _is_within_bounds(self, scene_pos):
         """Check if a scene position is within the background image bounds."""
@@ -161,7 +183,7 @@ class Canvas2D(QGraphicsView):
         # Create background item
         self.background_item = QGraphicsPixmapItem(pixmap)
         config = ConfigManager.instance()
-        self.background_item.setZValue(config.get_value("colors", "background", "z_value") or -100)
+        self.background_item.setZValue(config.get_ui_value("background", "z_value"))
 
         # Position and scale background to match real-world coordinates
         # origin = (min_x, min_y, max_x, max_y) in meters
@@ -260,6 +282,15 @@ class Canvas2D(QGraphicsView):
         """Handle mouse release events."""
         self.event_coordinator.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
+        self._filter_rubberband_selection()
+
+    def _filter_rubberband_selection(self):
+        """Remove non-annotation and child items from rubber-band selection."""
+        from src.gui.items import RoomItem, CustomPolygonItem, ObjectItem, EdgeItem, NodeItem
+        VALID_TYPES = (RoomItem, CustomPolygonItem, ObjectItem, EdgeItem, NodeItem)
+        for item in self.scene.selectedItems():
+            if not isinstance(item, VALID_TYPES) or item.parentItem() is not None:
+                item.setSelected(False)
 
     def keyPressEvent(self, event):
         """Handle keyboard events."""
@@ -272,6 +303,23 @@ class Canvas2D(QGraphicsView):
         if handled:
             return
         super().keyPressEvent(event)
+
+    def drawBackground(self, painter, rect):
+        super().drawBackground(painter, rect)
+        self._draw_origin_axes(painter, rect)
+
+    def _draw_origin_axes(self, painter, rect):
+        """Draw X (red) and Y (green) axes through scene origin (0, 0)."""
+        # Pen width stays visually thin regardless of zoom level
+        scale = self.transform().m11()
+        pen_width = 1.0 / scale if scale > 0 else 1.0
+
+        config = ConfigManager.instance()
+        painter.setPen(QPen(config.get_color("axes", "x"), pen_width))
+        painter.drawLine(QPointF(rect.left(), 0.0), QPointF(rect.right(), 0.0))
+
+        painter.setPen(QPen(config.get_color("axes", "y"), pen_width))
+        painter.drawLine(QPointF(0.0, rect.top()), QPointF(0.0, rect.bottom()))
 
     def reset_view(self):
         """Reset view to fit entire scene.
@@ -293,17 +341,17 @@ class Canvas2D(QGraphicsView):
         self.clipboard_manager.paste_clipboard()
 
     def delete_selected_items(self):
-        from src.gui.items import RoomItem, NodeItem
+        from src.gui.items import RoomItem, NodeItem, CustomPolygonItem, ObjectItem
         from src.core.undo_commands import DeleteItemCommand
 
         selected = self.scene.selectedItems()
         if not selected:
             return
 
-        # Collect all items to delete: if a RoomItem is selected, also delete its nodes
+        # Collect all items to delete
         items_to_delete = set(selected)
         for item in selected:
-            if isinstance(item, RoomItem):
+            if isinstance(item, (RoomItem, CustomPolygonItem)):
                 for node in item.nodes:
                     items_to_delete.add(node)
                     for edge in list(node.edges):
@@ -318,6 +366,19 @@ class Canvas2D(QGraphicsView):
             if isinstance(item, RoomItem):
                 item.update_style()
                 item.update_overlay()
+
+    def update_all_custom_polygons(self):
+        from src.gui.items import CustomPolygonItem
+        for item in self.scene.items():
+            if isinstance(item, CustomPolygonItem):
+                item.update_style()
+                item.update_overlay()
+
+    def update_all_objects(self):
+        from src.gui.items import ObjectItem
+        for item in self.scene.items():
+            if isinstance(item, ObjectItem):
+                item.update_style()
 
     def save_to_data(self):
         """Save canvas data to ProjectData format.

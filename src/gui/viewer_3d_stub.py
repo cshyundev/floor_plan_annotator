@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QFont
 from PyQt6.QtCore import Qt, QPoint
 
+from src.core.config import ConfigManager
+
 
 class Viewer3DStub(QWidget):
     """Stub 3D viewer that shows an error message when Open3D is not available."""
@@ -12,14 +14,18 @@ class Viewer3DStub(QWidget):
     def __init__(self):
         super().__init__()
         self.geometry = None
+        config = ConfigManager.instance()
+        self._bg_color = config.get_color("viewer_3d", "background")
+        self._text_color = config.get_color("viewer_3d", "text")
+        self._font_size = config.get_ui_value("viewer_3d", "font_size")
 
     def paintEvent(self, event):
         """Paint error message."""
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(240, 240, 240))
-        painter.setPen(QColor(150, 150, 150))
+        painter.fillRect(self.rect(), self._bg_color)
+        painter.setPen(self._text_color)
         font = QFont()
-        font.setPointSize(12)
+        font.setPointSize(self._font_size)
         painter.setFont(font)
         painter.drawText(
             self.rect(),
@@ -40,4 +46,31 @@ class Viewer3DStub(QWidget):
 
     def render_scene(self):
         """Stub method."""
+        pass
+
+    def add_room_geometry(self, room_id, mesh):
+        pass
+
+    def remove_room_geometry(self, room_id):
+        pass
+
+    def add_wall_geometry(self, wall_id, mesh):
+        pass
+
+    def remove_wall_geometry(self, wall_id):
+        pass
+
+    def add_custom_polygon_geometry(self, polygon_id, mesh):
+        pass
+
+    def remove_custom_polygon_geometry(self, polygon_id):
+        pass
+
+    def add_object_geometry(self, object_id, mesh):
+        pass
+
+    def remove_object_geometry(self, object_id):
+        pass
+
+    def set_geometry_visibility(self, visible):
         pass

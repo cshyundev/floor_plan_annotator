@@ -1,0 +1,38 @@
+types:
+  furniture:
+    name: Furniture
+    color:
+    - 150
+    - 200
+    - 255
+    - 150
+    border:
+    - 80
+    - 130
+    - 200
+    index: 1
+  appliance:
+    name: Appliance
+    color:
+    - 255
+    - 220
+    - 150
+    - 150
+    border:
+    - 200
+    - 160
+    - 80
+    index: 2
+  obstacle:
+    name: Obstacle
+    color:
+    - 200
+    - 150
+    - 255
+    - 150
+    border:
+    - 140
+    - 80
+    - 200
+    index: 3
+default_type: furniture

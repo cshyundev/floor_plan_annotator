@@ -1,9 +1,11 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QSplitter, QFileDialog, QSlider, QLabel, QDockWidget, QToolBar, QStatusBar, QTabWidget, QCheckBox)
-from PyQt6.QtGui import QAction, QIcon, QUndoStack
+                             QSplitter, QFileDialog, QSlider, QLabel, QDockWidget,
+                             QToolBar, QStatusBar, QCheckBox, QPushButton, QScrollArea)
+from PyQt6.QtGui import QAction, QActionGroup, QUndoStack
 from PyQt6.QtCore import Qt
 from src.gui.canvas_2d import Canvas2D
-from src.gui.room_type_editor import RoomTypeEditorWidget
+from src.gui.collapsible_section import CollapsibleSection
+from src.gui.properties_panel import PropertiesPanel
 from src.core.processor import SliceEngine
 import numpy as np
 
@@ -25,13 +27,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         config = ConfigManager.instance()
         self.setWindowTitle(config.get_string("window", "title"))
-        self.resize(1200, 800)
-        
+        self.resize(
+            config.get_ui_value("window", "width"),
+            config.get_ui_value("window", "height")
+        )
+
         # Central Widget & Layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        
+
         # Splitter for 3D and 2D views
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.splitter)
@@ -45,15 +50,21 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.canvas_2d)
 
         # Set initial sizes
-        self.splitter.setSizes([600, 600])
-        
+        self.splitter.setSizes([
+            config.get_ui_value("window", "splitter_left"),
+            config.get_ui_value("window", "splitter_right")
+        ])
+
         # Helper
         self.undo_stack = QUndoStack(self)
         self.canvas_2d.set_undo_stack(self.undo_stack)
-        
+
+        # Type editor dialog (lazy-created)
+        self._type_editor_dialog = None
+
         # Controls (Dock)
         self.create_controls()
-        
+
         # Data
         self.processor = SliceEngine()
         self.current_z = 0.0
@@ -66,8 +77,11 @@ class MainWindow(QMainWindow):
             ConfigManager.instance()
         )
 
-        # Connect undo stack changes to sync
+        # Connect undo stack changes to sync + properties refresh
         self.undo_stack.indexChanged.connect(self.on_undo_stack_changed)
+        self.undo_stack.indexChanged.connect(
+            lambda: self.properties_panel._on_selection_changed()
+        )
 
         # Menu Bar
         self.create_menu()
@@ -76,29 +90,35 @@ class MainWindow(QMainWindow):
         config = ConfigManager.instance()
         menubar = self.menuBar()
         file_menu = menubar.addMenu(config.get_string("menu", "file"))
-        
+
         load_action = QAction(config.get_string("menu", "load_point_cloud"), self)
         load_action.triggered.connect(self.load_point_cloud)
         file_menu.addAction(load_action)
-        
+
         file_menu.addSeparator()
 
         open_proj_action = QAction(config.get_string("menu", "open_project"), self)
         open_proj_action.setShortcut(config.get_shortcut("file", "open_project") or "Ctrl+O")
         open_proj_action.triggered.connect(self.open_project)
         file_menu.addAction(open_proj_action)
-        
+
         save_proj_action = QAction(config.get_string("menu", "save_project"), self)
         save_proj_action.setShortcut(config.get_shortcut("file", "save_project") or "Ctrl+S")
         save_proj_action.triggered.connect(self.save_project)
         file_menu.addAction(save_proj_action)
-        
+
         file_menu.addSeparator()
-        
+
         exit_action = QAction(config.get_string("menu", "exit"), self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-        
+
+        # Edit menu
+        edit_menu = menubar.addMenu("Edit")
+        manage_types_action = QAction("Manage Types...", self)
+        manage_types_action.triggered.connect(self._open_type_editor)
+        edit_menu.addAction(manage_types_action)
+
     def save_project(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Save Project", "", "JSON Files (*.json)")
         if file_path:
@@ -118,89 +138,141 @@ class MainWindow(QMainWindow):
             # 2. Populate canvas
             self.canvas_2d.load_from_data(project_data)
             print(f"Project loaded from {file_path}")
-            
+
     def create_controls(self):
         config = ConfigManager.instance()
+
+        # ── Right Dock: Properties + View Controls ──
         dock = QDockWidget(config.get_string("labels", "controls_dock"), self)
         dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
-        
-        tab_widget = QTabWidget()
-        
-        # Tab 1: Slice Controls
-        slice_widget = QWidget()
-        layout = QVBoxLayout(slice_widget)
-        
-        layout.addWidget(QLabel(config.get_string("labels", "slice_height")))
+        dock.setMinimumWidth(280)
+
+        # Scrollable container for the dock
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        container = QWidget()
+        main_layout = QVBoxLayout(container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(1)
+
+        # Section 1: Properties
+        self.properties_panel = PropertiesPanel(self.canvas_2d)
+        self.properties_panel.connect_scene(self.canvas_2d.scene)
+
+        props_section = CollapsibleSection("Properties")
+        props_layout = QVBoxLayout()
+        props_layout.setContentsMargins(0, 0, 0, 0)
+        props_layout.addWidget(self.properties_panel)
+        props_section.set_content_layout(props_layout)
+        main_layout.addWidget(props_section)
+
+        # Section 2: View Controls
+        view_section = CollapsibleSection("View Controls")
+        view_layout = QVBoxLayout()
+        view_layout.setContentsMargins(8, 4, 8, 4)
+
+        view_layout.addWidget(QLabel(config.get_string("labels", "slice_height")))
         self.z_slider = QSlider(Qt.Orientation.Horizontal)
-        self.z_slider.setRange(0, 100) # 0 to 100% of height
+        self.z_slider.setRange(0, 100)
         self.z_slider.valueChanged.connect(self.on_slider_change)
-        layout.addWidget(self.z_slider)
-        
+        view_layout.addWidget(self.z_slider)
+
         self.z_label = QLabel(config.get_string("labels", "z_value").format(0.0))
-        layout.addWidget(self.z_label)
+        view_layout.addWidget(self.z_label)
 
-        # Add separator
-        layout.addWidget(QLabel(""))
-
-        # Geometry visibility control
         self.geometry_visible_checkbox = QCheckBox("Show Original 3D Data")
-        self.geometry_visible_checkbox.setChecked(True)  # Default: show geometry
+        self.geometry_visible_checkbox.setChecked(True)
         self.geometry_visible_checkbox.stateChanged.connect(self.on_geometry_visibility_changed)
-        layout.addWidget(self.geometry_visible_checkbox)
+        view_layout.addWidget(self.geometry_visible_checkbox)
 
-        layout.addStretch()
-        tab_widget.addTab(slice_widget, "View Controls")
-        
-        # Tab 2: Room Types
-        self.room_editor = RoomTypeEditorWidget()
-        self.room_editor.set_scene(self.canvas_2d.scene)
-        self.room_editor.config_changed.connect(self.canvas_2d.update_all_rooms)
-        tab_widget.addTab(self.room_editor, "Room Types")
-        
-        dock.setWidget(tab_widget)
+        view_section.set_content_layout(view_layout)
+        main_layout.addWidget(view_section)
+
+        # Manage Types button
+        manage_btn = QPushButton("Manage Types...")
+        manage_btn.setStyleSheet("margin: 8px;")
+        manage_btn.clicked.connect(self._open_type_editor)
+        main_layout.addWidget(manage_btn)
+
+        main_layout.addStretch()
+
+        scroll.setWidget(container)
+        dock.setWidget(scroll)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
-        # Toolbar
-        config = ConfigManager.instance()
+        # ── Toolbar (checkable tool buttons) ──
         self.toolbar = QToolBar(config.get_string("labels", "toolbar"))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
-        
-        select_action = QAction("Select", self)
-        select_action.setShortcut(config.get_shortcut("tools", "select") or "Esc")
-        select_action.triggered.connect(lambda: self.canvas_2d.set_tool("select"))
-        self.toolbar.addAction(select_action)
-        
-        wall_action = QAction("Wall", self)
-        wall_action.setShortcut(config.get_shortcut("tools", "wall") or "W")
-        wall_action.triggered.connect(lambda: self.canvas_2d.set_tool("wall"))
-        self.toolbar.addAction(wall_action)
 
-        rect_action = QAction("Room (Polygon)", self)
-        rect_action.setShortcut(config.get_shortcut("tools", "rect") or "R")
-        rect_action.triggered.connect(lambda: self.canvas_2d.set_tool("room"))
-        self.toolbar.addAction(rect_action)
-        
+        # Tool action group (exclusive — only one tool active at a time)
+        self.tool_action_group = QActionGroup(self)
+        self.tool_action_group.setExclusive(True)
+
+        tool_defs = [
+            ("select", "Select", "tools", "select", "Esc"),
+            None,  # separator after Select
+            ("wall", "Wall", "tools", "wall", "W"),
+            ("room", "Room", "tools", "rect", "R"),
+            ("custom_polygon", "Polygon", "tools", "custom_polygon", "P"),
+            ("object", "Object", "tools", "object", "O"),
+        ]
+
+        self._tool_actions = {}
+        for item in tool_defs:
+            if item is None:
+                self.toolbar.addSeparator()
+                continue
+            tool_name, label, sc_group, sc_key, default_key = item
+            shortcut = config.get_shortcut(sc_group, sc_key) or default_key
+            action = QAction(f"{label} ({shortcut})", self)
+            action.setCheckable(True)
+            action.setShortcut(shortcut)
+            action.setToolTip(f"{label} ({shortcut})")
+            action.triggered.connect(lambda checked, tn=tool_name: self._on_tool_action(tn))
+            self.tool_action_group.addAction(action)
+            self.toolbar.addAction(action)
+            self._tool_actions[tool_name] = action
+
+        # Default: select tool checked
+        self._tool_actions["select"].setChecked(True)
+
+        # Sync toolbar when tool changes via keyboard or other means
+        self.canvas_2d.tool_changed.connect(self._sync_toolbar_to_tool)
+
         self.toolbar.addSeparator()
 
-        delete_action = QAction("Delete", self)
-        delete_action.setShortcut("Delete")
+        delete_shortcut_raw = config.get_shortcut("tools", "delete") or "Delete"
+        # Handle list of shortcuts (e.g. ["Delete", "Backspace"])
+        if isinstance(delete_shortcut_raw, list):
+            delete_shortcut = delete_shortcut_raw[0]
+        else:
+            delete_shortcut = delete_shortcut_raw
+        delete_action = QAction(f"Delete ({delete_shortcut})", self)
+        delete_action.setShortcut(delete_shortcut)
+        delete_action.setToolTip(f"Delete ({delete_shortcut})")
         delete_action.triggered.connect(self.canvas_2d.delete_selected_items)
         self.toolbar.addAction(delete_action)
 
         self.toolbar.addSeparator()
 
-        undo_action = self.undo_stack.createUndoAction(self, config.get_string("undo", "undo"))
-        undo_action.setShortcut(config.get_shortcut("edit", "undo") or "Ctrl+Z")
+        undo_shortcut = config.get_shortcut("edit", "undo") or "Ctrl+Z"
+        undo_action = self.undo_stack.createUndoAction(self, f"{config.get_string('undo', 'undo')} ({undo_shortcut})")
+        undo_action.setShortcut(undo_shortcut)
+        undo_action.setToolTip(f"Undo ({undo_shortcut})")
         self.toolbar.addAction(undo_action)
 
-        redo_action = self.undo_stack.createRedoAction(self, config.get_string("undo", "redo"))
-        redo_action.setShortcut(config.get_shortcut("edit", "redo") or "Ctrl+Y")
+        redo_shortcut = config.get_shortcut("edit", "redo") or "Ctrl+Y"
+        redo_action = self.undo_stack.createRedoAction(self, f"{config.get_string('undo', 'redo')} ({redo_shortcut})")
+        redo_action.setShortcut(redo_shortcut)
+        redo_action.setToolTip(f"Redo ({redo_shortcut})")
         self.toolbar.addAction(redo_action)
-        
+
         # Status Bar
         self.setStatusBar(QStatusBar(self))
         self.canvas_2d.status_message.connect(self.statusBar().showMessage)
-        
+
         # Auto-load dummy data for development
         import os
         dummy_paths = ["data/layout_dummy.ply", "layout_dummy.ply"]
@@ -215,6 +287,30 @@ class MainWindow(QMainWindow):
             # Use QTimer to delay load to ensure window and renderer are ready
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(1000, lambda: self.load_data(target_path))
+
+    def _on_tool_action(self, tool_name):
+        self.canvas_2d.set_tool(tool_name)
+
+    def _sync_toolbar_to_tool(self, tool_name):
+        action = self._tool_actions.get(tool_name)
+        if action:
+            action.setChecked(True)
+
+    def _open_type_editor(self):
+        from src.gui.type_editor_dialog import TypeEditorDialog
+        if self._type_editor_dialog is None:
+            self._type_editor_dialog = TypeEditorDialog(self.canvas_2d, parent=self)
+            # Connect config changes to properties panel refresh
+            self._type_editor_dialog.room_editor.config_changed.connect(
+                lambda: self.properties_panel._on_selection_changed()
+            )
+            self._type_editor_dialog.custom_polygon_editor.config_changed.connect(
+                lambda: self.properties_panel._on_selection_changed()
+            )
+            self._type_editor_dialog.object_editor.config_changed.connect(
+                lambda: self.properties_panel._on_selection_changed()
+            )
+        self._type_editor_dialog.exec()
 
     def load_data(self, file_path):
         """Load 3D data from file."""
@@ -247,6 +343,9 @@ class MainWindow(QMainWindow):
 
         # 3. Update 2D
         self.canvas_2d.update_background(img, bounds, scale)
+
+        # 3.5. Pass world bounds to annotation sync for Y-axis conversion
+        self.annotation_sync.set_world_bounds(bounds)
 
         # 4. Update 3D (Show Plane)
         self.viewer_3d.update_slice_plane(self.current_z)

@@ -16,6 +16,7 @@ tools:
     moving: "Moving Node..."
     cleared: "Selection cleared."
     selected: "Item selected."
+    cycling: "Selected {index} of {total} items. Click again to cycle."
   
   wall:
     name: "Wall"
@@ -32,6 +33,17 @@ tools:
     drag: "Drag to create room..."
     add_room_cmd: "Add Room"
 
+  custom_polygon:
+    name: "Custom Polygon"
+    status: "Custom Polygon Tool: Left-click to add points, Right-click to finish."
+    add_point: "Point {} added. Right-click or close to finish."
+
+  object:
+    name: "Object"
+    status: "Object Tool: Click and drag to create an OBB."
+    drag: "Drag to create object..."
+    add_object_cmd: "Add Object"
+
 undo:
   undo: "Undo"
   redo: "Redo"
@@ -41,3 +53,12 @@ labels:
   z_value: "Z: {:.2f}m"
   controls_dock: "Controls"
   toolbar: "Tools"
+
+menu_edit:
+  manage_types: "Manage Types..."
+
+properties:
+  no_selection: "No Selection"
+  multi_selection: "{} items selected"
+  select_hint: "Select an annotation to view its properties."
+  manage_types: "Manage Types..."

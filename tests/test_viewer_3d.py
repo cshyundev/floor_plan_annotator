@@ -61,13 +61,21 @@ class TestViewer3DRendererCreation(unittest.TestCase):
 
     @patch('src.gui.viewer_3d.rendering')
     def test_create_renderer_sets_background(self, mock_rendering):
-        """_create_renderer sets the scene background color."""
+        """_create_renderer sets the scene background with navy color and gradient image."""
         mock_renderer = MagicMock()
         mock_rendering.OffscreenRenderer.return_value = mock_renderer
 
         self.viewer._create_renderer(800, 600)
 
-        mock_renderer.scene.set_background.assert_called_once_with([0.9, 0.9, 0.9, 1.0])
+        call_args = mock_renderer.scene.set_background.call_args
+        self.assertIsNotNone(call_args)
+        color_arg = call_args[0][0]
+        self.assertAlmostEqual(color_arg[0], 0.11, places=2)
+        self.assertAlmostEqual(color_arg[1], 0.137, places=2)
+        self.assertAlmostEqual(color_arg[2], 0.212, places=2)
+        self.assertAlmostEqual(color_arg[3], 1.0, places=2)
+        # Second argument should be an Open3D Image (the gradient background)
+        self.assertEqual(len(call_args[0]), 2)
 
     @patch('src.gui.viewer_3d.rendering')
     def test_create_renderer_enables_sun_light(self, mock_rendering):
@@ -144,7 +152,7 @@ class TestViewer3DRendererCreation(unittest.TestCase):
 
     @patch('src.gui.viewer_3d.rendering')
     def test_create_renderer_does_not_readd_geometry_when_none(self, mock_rendering):
-        """_create_renderer skips geometry re-add when geometry is None."""
+        """_create_renderer skips main geometry and plane re-add when they are None."""
         mock_renderer = MagicMock()
         mock_rendering.OffscreenRenderer.return_value = mock_renderer
 
@@ -153,7 +161,11 @@ class TestViewer3DRendererCreation(unittest.TestCase):
 
         self.viewer._create_renderer(800, 600)
 
-        mock_renderer.scene.add_geometry.assert_not_called()
+        # "geometry" and "plane" should not be added; axes/grid are always added
+        add_calls = mock_renderer.scene.add_geometry.call_args_list
+        added_names = [c[0][0] for c in add_calls]
+        self.assertNotIn("geometry", added_names)
+        self.assertNotIn("plane", added_names)
 
     @patch('src.gui.viewer_3d.rendering')
     def test_create_renderer_failure_sets_renderer_failed(self, mock_rendering):

@@ -11,7 +11,7 @@ if not QApplication.instance():
     app = QApplication(sys.argv)
 
 from src.gui.canvas_2d import Canvas2D
-from src.gui.items import NodeItem, RoomItem
+from src.gui.items import NodeItem, RoomItem, ObjectItem
 from src.core.config import ConfigManager
 
 class TestCanvas2D(unittest.TestCase):
@@ -38,8 +38,8 @@ class TestCanvas2D(unittest.TestCase):
     def test_wheel_zoom(self):
         # Get zoom limits from config
         config = ConfigManager.instance()
-        min_zoom = config.get_value("colors", "canvas", "min_zoom") or 0.1
-        max_zoom = config.get_value("colors", "canvas", "max_zoom") or 50.0
+        min_zoom = config.get_ui_value("canvas", "min_zoom")
+        max_zoom = config.get_ui_value("canvas", "max_zoom")
 
         # Set initial zoom to middle of valid range
         mid_zoom = (min_zoom + max_zoom) / 2
@@ -74,8 +74,8 @@ class TestCanvas2D(unittest.TestCase):
         """Test that zoom out stops at minimum zoom level."""
         # Get zoom limits from config
         config = ConfigManager.instance()
-        min_zoom = config.get_value("colors", "canvas", "min_zoom") or 0.1
-        max_zoom = config.get_value("colors", "canvas", "max_zoom") or 50.0
+        min_zoom = config.get_ui_value("canvas", "min_zoom")
+        max_zoom = config.get_ui_value("canvas", "max_zoom")
 
         # Start at maximum zoom
         self.canvas.resetTransform()
@@ -99,8 +99,8 @@ class TestCanvas2D(unittest.TestCase):
         """Test that zoom in stops at maximum zoom level."""
         # Get zoom limits from config
         config = ConfigManager.instance()
-        min_zoom = config.get_value("colors", "canvas", "min_zoom") or 0.1
-        max_zoom = config.get_value("colors", "canvas", "max_zoom") or 50.0
+        min_zoom = config.get_ui_value("canvas", "min_zoom")
+        max_zoom = config.get_ui_value("canvas", "max_zoom")
 
         # Start at minimum zoom
         self.canvas.resetTransform()
@@ -203,6 +203,43 @@ class TestCanvas2D(unittest.TestCase):
         
         # I will fix source code in next step. For now update test to work assuming/expecting fix.
         pass # The test logic is mostly fine, the source needs fix.
+
+    def test_rubberband_filters_child_items(self):
+        """Rubber-band selection filter should deselect child items."""
+        # Add a room (which has label and rotation handle as children)
+        nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
+        for n in nodes:
+            self.canvas.scene.addItem(n)
+        room = RoomItem(nodes, room_type="living_room")
+        self.canvas.scene.addItem(room)
+
+        # Manually select the room and its child label
+        room.setSelected(True)
+        room.label.setFlag(room.label.GraphicsItemFlag.ItemIsSelectable, True)
+        room.label.setSelected(True)
+
+        # The label is a child item (parentItem() is not None)
+        self.assertIsNotNone(room.label.parentItem())
+
+        # Apply filter
+        self.canvas._filter_rubberband_selection()
+
+        # Room should remain selected, label should be deselected
+        self.assertTrue(room.isSelected())
+        self.assertFalse(room.label.isSelected())
+
+    def test_rubberband_filters_non_annotation_items(self):
+        """Rubber-band filter should deselect non-annotation items."""
+        from PyQt6.QtWidgets import QGraphicsRectItem
+        rect = QGraphicsRectItem(0, 0, 10, 10)
+        rect.setFlag(rect.GraphicsItemFlag.ItemIsSelectable, True)
+        self.canvas.scene.addItem(rect)
+        rect.setSelected(True)
+
+        self.canvas._filter_rubberband_selection()
+
+        self.assertFalse(rect.isSelected())
+
 
 if __name__ == "__main__":
     unittest.main()

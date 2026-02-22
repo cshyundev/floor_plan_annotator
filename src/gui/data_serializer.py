@@ -19,17 +19,12 @@ class DataSerializer:
         """Convert scene items to ProjectData format.
 
         Returns:
-            ProjectData instance containing all walls and rooms
+            ProjectData instance containing all walls, rooms, custom polygons and objects
         """
-        from src.model.data import ProjectData, Wall, Room, Point2D
-        from src.gui.items import NodeItem, EdgeItem, RoomItem
+        from src.model.data import ProjectData, Wall, Room, Point2D, CustomPolygon, Object
+        from src.gui.items import NodeItem, EdgeItem, RoomItem, CustomPolygonItem, ObjectItem
 
         data = ProjectData()
-
-        # Iterate items
-        # We need to capture connected walls and rooms.
-        # Current data model stores Walls and Rooms with coordinates.
-
         items = self.canvas.scene.items()
 
         for item in items:
@@ -47,6 +42,22 @@ class DataSerializer:
                 room.room_type = item.room_type
                 room.id = item.room_id
                 data.rooms.append(room)
+            elif isinstance(item, CustomPolygonItem):
+                points = [Point2D(n.pos().x(), n.pos().y()) for n in item.nodes]
+                cp = CustomPolygon(points=points)
+                cp.polygon_type = item.polygon_type
+                cp.id = item.polygon_id
+                data.custom_polygons.append(cp)
+            elif isinstance(item, ObjectItem):
+                obj = Object(
+                    center=Point2D(item.center.x(), item.center.y()),
+                    width=item.width,
+                    height=item.height,
+                    rotation=item.angle,
+                    object_type=item.object_type,
+                )
+                obj.id = item.object_id
+                data.objects.append(obj)
 
         return data
 
@@ -60,8 +71,10 @@ class DataSerializer:
         if hasattr(self.canvas, '_undo_stack') and self.canvas._undo_stack:
             self.canvas._undo_stack.clear()
 
-        # Reset room ID counter to max(existing IDs) + 1
+        # Reset ID counters
         self._reset_room_id_counter(data)
+        self._reset_custom_polygon_id_counter(data)
+        self._reset_object_id_counter(data)
 
         # Recreate items
         from src.gui.items import NodeItem, EdgeItem, RoomItem
@@ -84,6 +97,12 @@ class DataSerializer:
         # Recreate rooms
         self._load_rooms(data, get_or_create_node)
 
+        # Recreate custom polygons
+        self._load_custom_polygons(data, get_or_create_node)
+
+        # Recreate objects
+        self._load_objects(data)
+
         # Restore background if it exists
         self._restore_background()
 
@@ -96,6 +115,26 @@ class DataSerializer:
             except (ValueError, TypeError):
                 pass
         self.canvas._next_room_id = max_id + 1
+
+    def _reset_custom_polygon_id_counter(self, data):
+        """Reset the custom polygon ID counter."""
+        max_id = -1
+        for cp in data.custom_polygons:
+            try:
+                max_id = max(max_id, int(cp.id))
+            except (ValueError, TypeError):
+                pass
+        self.canvas._next_custom_polygon_id = max_id + 1
+
+    def _reset_object_id_counter(self, data):
+        """Reset the object ID counter."""
+        max_id = -1
+        for obj in data.objects:
+            try:
+                max_id = max(max_id, int(obj.id))
+            except (ValueError, TypeError):
+                pass
+        self.canvas._next_object_id = max_id + 1
 
     def _load_walls(self, data, get_or_create_node):
         """Load walls from ProjectData."""
@@ -124,6 +163,38 @@ class DataSerializer:
                 # Ensure edges exist for room boundary
                 self._create_room_boundary_edges(nodes)
 
+    def _load_custom_polygons(self, data, get_or_create_node):
+        """Load custom polygons from ProjectData."""
+        from src.gui.items import CustomPolygonItem
+
+        for cp in data.custom_polygons:
+            nodes = []
+            for p in cp.points:
+                n = get_or_create_node(p.x, p.y)
+                nodes.append(n)
+
+            if nodes:
+                poly = CustomPolygonItem(nodes, polygon_type=cp.polygon_type, polygon_id=cp.id)
+                self.canvas.scene.addItem(poly)
+                self._create_room_boundary_edges(nodes)
+
+    def _load_objects(self, data):
+        """Load objects from ProjectData."""
+        from src.gui.items import ObjectItem
+        from PyQt6.QtCore import QPointF
+
+        for obj in data.objects:
+            center = QPointF(obj.center.x, obj.center.y)
+            obj_item = ObjectItem(
+                center=center,
+                width=obj.width,
+                height=obj.height,
+                angle=obj.rotation,
+                object_type=obj.object_type,
+                object_id=obj.id,
+            )
+            self.canvas.scene.addItem(obj_item)
+
     def _create_room_boundary_edges(self, nodes):
         """Create edges for room boundary if they don't already exist."""
         from src.gui.items import EdgeItem
@@ -148,5 +219,5 @@ class DataSerializer:
         if self.canvas.background_item:
             # scene.clear() removed it from scene, re-add it
             self.canvas.scene.addItem(self.canvas.background_item)
-            z_value = self._config.get_value("colors", "background", "z_value") or -100
+            z_value = self._config.get_ui_value("background", "z_value")
             self.canvas.background_item.setZValue(z_value)

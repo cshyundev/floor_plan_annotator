@@ -1,0 +1,38 @@
+types:
+  clean_zone:
+    name: Clean Zone
+    color:
+    - 100
+    - 220
+    - 100
+    - 100
+    border:
+    - 50
+    - 160
+    - 50
+    index: 1
+  danger_zone:
+    name: Danger Zone
+    color:
+    - 255
+    - 100
+    - 100
+    - 100
+    border:
+    - 200
+    - 50
+    - 50
+    index: 2
+  complex_zone:
+    name: Complex Zone
+    color:
+    - 255
+    - 200
+    - 100
+    - 100
+    border:
+    - 200
+    - 150
+    - 50
+    index: 3
+default_type: clean_zone

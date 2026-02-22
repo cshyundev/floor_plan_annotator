@@ -25,10 +25,10 @@ class TestNodeItemScale:
         node = NodeItem(0, 0)
         scene.addItem(node)
 
-        # Default radius should be 0.05 meters (5cm)
+        # Default radius should be 0.1 meters (10cm)
         rect = node.rect()
         radius = rect.width() / 2
-        assert 0.04 <= radius <= 0.06, f"Node radius {radius} not in range [0.04, 0.06]"
+        assert 0.08 <= radius <= 0.12, f"Node radius {radius} not in range [0.08, 0.12]"
 
     def test_node_pen_width(self, scene):
         """Test that NodeItem has correct pen width (meters)."""
@@ -36,8 +36,8 @@ class TestNodeItemScale:
         scene.addItem(node)
 
         pen_width = node.pen().widthF()
-        # Default pen width should be 0.01 meters (1cm)
-        assert 0.005 <= pen_width <= 0.015, f"Node pen width {pen_width} not in range [0.005, 0.015]"
+        # Default pen width should be 0.02 meters (2cm)
+        assert 0.015 <= pen_width <= 0.025, f"Node pen width {pen_width} not in range [0.015, 0.025]"
 
     def test_node_custom_radius(self, scene):
         """Test NodeItem with custom radius."""
@@ -74,8 +74,8 @@ class TestEdgeItemScale:
         scene.addItem(edge)
 
         pen_width = edge.pen().widthF()
-        # Default wall width should be 0.02 meters (2cm)
-        assert 0.015 <= pen_width <= 0.025, f"Edge width {pen_width} not in range [0.015, 0.025]"
+        # Default wall width should be 0.04 meters (4cm)
+        assert 0.035 <= pen_width <= 0.045, f"Edge width {pen_width} not in range [0.035, 0.045]"
 
     def test_edge_selected_width(self, scene):
         """Test that selected EdgeItem has correct width."""
@@ -88,9 +88,9 @@ class TestEdgeItemScale:
         scene.addItem(edge)
 
         edge.setSelected(True)
-        # Selected width should be slightly larger (0.03 meters)
+        # Selected width should be slightly larger (0.06 meters)
         selected_width = edge.pen_selected.widthF()
-        assert 0.025 <= selected_width <= 0.035, f"Selected edge width {selected_width} not in range [0.025, 0.035]"
+        assert 0.055 <= selected_width <= 0.065, f"Selected edge width {selected_width} not in range [0.055, 0.065]"
 
     def test_edge_updates_with_nodes(self, scene):
         """Test that edge updates when nodes move."""
@@ -129,8 +129,8 @@ class TestRoomItemScale:
         scene.addItem(room)
 
         pen_width = room.pen().widthF()
-        # Room edge width should be 0.02 meters (2cm)
-        assert 0.015 <= pen_width <= 0.025, f"Room edge width {pen_width} not in range [0.015, 0.025]"
+        # Room edge width should be 0.04 meters (4cm)
+        assert 0.035 <= pen_width <= 0.045, f"Room edge width {pen_width} not in range [0.035, 0.045]"
 
     def test_room_rotation_handle_size(self, scene):
         """Test that rotation handle has correct size (meters)."""

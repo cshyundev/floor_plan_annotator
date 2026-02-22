@@ -19,17 +19,33 @@ class ClipboardManager:
 
     def copy_selection(self):
         """Copy selected items to clipboard."""
-        from src.gui.items import RoomItem
+        from src.gui.items import RoomItem, CustomPolygonItem, ObjectItem
 
         selected = self.canvas.scene.selectedItems()
         self._clipboard = []
         for item in selected:
             if isinstance(item, RoomItem):
-                # Store data needed to recreate
                 data = {
                     "type": "room",
                     "room_type": item.room_type,
                     "nodes": [(n.pos().x(), n.pos().y()) for n in item.nodes]
+                }
+                self._clipboard.append(data)
+            elif isinstance(item, CustomPolygonItem):
+                data = {
+                    "type": "custom_polygon",
+                    "polygon_type": item.polygon_type,
+                    "nodes": [(n.pos().x(), n.pos().y()) for n in item.nodes]
+                }
+                self._clipboard.append(data)
+            elif isinstance(item, ObjectItem):
+                data = {
+                    "type": "object",
+                    "object_type": item.object_type,
+                    "center": (item.center.x(), item.center.y()),
+                    "width": item.width,
+                    "height": item.height,
+                    "angle": item.angle,
                 }
                 self._clipboard.append(data)
 
@@ -38,10 +54,10 @@ class ClipboardManager:
         if not self._clipboard:
             return
 
-        from src.gui.items import NodeItem, RoomItem
+        from src.gui.items import NodeItem, RoomItem, CustomPolygonItem, ObjectItem
         from src.core.undo_commands import AddItemCommand
 
-        paste_offset = self._config.get_value("colors", "room", "paste_offset") or 20
+        paste_offset = self._config.get_ui_value("room", "paste_offset")
         new_items = []
         offset = QPointF(paste_offset, paste_offset)
 
@@ -56,6 +72,32 @@ class ClipboardManager:
                 room = RoomItem(nodes, room_type=data["room_type"], room_id=room_id)
                 new_items.extend(nodes)
                 new_items.append(room)
+
+            elif data["type"] == "custom_polygon":
+                nodes = []
+                for x, y in data["nodes"]:
+                    node = NodeItem(x + offset.x(), y + offset.y())
+                    nodes.append(node)
+
+                polygon_id = self.canvas.next_custom_polygon_id()
+                poly = CustomPolygonItem(nodes, polygon_type=data["polygon_type"],
+                                         polygon_id=polygon_id)
+                new_items.extend(nodes)
+                new_items.append(poly)
+
+            elif data["type"] == "object":
+                cx, cy = data["center"]
+                center = QPointF(cx + offset.x(), cy + offset.y())
+                object_id = self.canvas.next_object_id()
+                obj = ObjectItem(
+                    center=center,
+                    width=data["width"],
+                    height=data["height"],
+                    angle=data["angle"],
+                    object_type=data["object_type"],
+                    object_id=object_id,
+                )
+                new_items.append(obj)
 
         if new_items:
             cmd = AddItemCommand(self.canvas.scene, new_items, "Paste Items")

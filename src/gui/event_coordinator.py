@@ -63,8 +63,8 @@ class EventCoordinator:
 
         # Get min/max zoom from config
         config = ConfigManager.instance()
-        min_zoom = config.get_value("colors", "canvas", "min_zoom") or 0.1
-        max_zoom = config.get_value("colors", "canvas", "max_zoom") or 50.0
+        min_zoom = config.get_ui_value("canvas", "min_zoom")
+        max_zoom = config.get_ui_value("canvas", "max_zoom")
 
         # Calculate new zoom level
         new_zoom = current_zoom * factor

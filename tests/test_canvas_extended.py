@@ -8,7 +8,7 @@ if not QApplication.instance():
     app = QApplication(sys.argv)
 
 from src.gui.canvas_2d import Canvas2D
-from src.gui.items import NodeItem, RoomItem
+from src.gui.items import NodeItem, RoomItem, CustomPolygonItem, ObjectItem
 
 class TestCanvasExtended(unittest.TestCase):
     def setUp(self):
@@ -48,12 +48,18 @@ class TestCanvasExtended(unittest.TestCase):
     def test_set_tool(self):
         self.canvas.set_tool("select")
         self.assertEqual(self.canvas.current_tool, self.canvas.select_tool)
-        
+
         self.canvas.set_tool("wall")
         self.assertEqual(self.canvas.current_tool, self.canvas.wall_tool)
-        
+
         self.canvas.set_tool("room")
         self.assertEqual(self.canvas.current_tool, self.canvas.room_tool)
+
+        self.canvas.set_tool("custom_polygon")
+        self.assertEqual(self.canvas.current_tool, self.canvas.tool_manager.custom_polygon_tool)
+
+        self.canvas.set_tool("object")
+        self.assertEqual(self.canvas.current_tool, self.canvas.tool_manager.object_tool)
         
     def test_save_load(self):
         # Setup some items
@@ -78,6 +84,39 @@ class TestCanvasExtended(unittest.TestCase):
         # Check scene items count. 2 nodes + 1 edge + implicit nodes?
         # load_from_data clears scene.
         self.assertTrue(len(self.canvas.scene.items()) > 0)
+
+    def test_save_load_custom_polygon(self):
+        """CustomPolygonItem should be saved to and loaded from ProjectData."""
+        nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
+        for n in nodes:
+            self.canvas.scene.addItem(n)
+        poly = CustomPolygonItem(nodes, polygon_type="clean_zone", polygon_id="0")
+        self.canvas.scene.addItem(poly)
+
+        data = self.canvas.save_to_data()
+        self.assertEqual(len(data.custom_polygons), 1)
+        self.assertEqual(data.custom_polygons[0].polygon_type, "clean_zone")
+
+        self.canvas.load_from_data(data)
+        cp_items = [i for i in self.canvas.scene.items() if isinstance(i, CustomPolygonItem)]
+        self.assertEqual(len(cp_items), 1)
+        self.assertEqual(cp_items[0].polygon_type, "clean_zone")
+
+    def test_save_load_object(self):
+        """ObjectItem should be saved to and loaded from ProjectData."""
+        obj = ObjectItem(center=QPointF(5.0, 5.0), width=2.0, height=1.0,
+                         angle=30.0, object_type="furniture", object_id="0")
+        self.canvas.scene.addItem(obj)
+
+        data = self.canvas.save_to_data()
+        self.assertEqual(len(data.objects), 1)
+        self.assertAlmostEqual(data.objects[0].rotation, 30.0)
+
+        self.canvas.load_from_data(data)
+        obj_items = [i for i in self.canvas.scene.items() if isinstance(i, ObjectItem)]
+        self.assertEqual(len(obj_items), 1)
+        self.assertAlmostEqual(obj_items[0].angle, 30.0)
+
 
 if __name__ == "__main__":
     unittest.main()

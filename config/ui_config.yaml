@@ -14,8 +14,8 @@ canvas:
   max_zoom: 80.0   # Maximum zoom level (prevent zooming in too far)
 
 node:
-  pen_width: 0.01       # Meters - node outline width in scene coordinates (1cm)
-  radius: 0.05          # Meters - node display size in scene coordinates (5cm)
+  pen_width: 0.02       # Meters - node outline width in scene coordinates (2cm)
+  radius: 0.1           # Meters - node display size in scene coordinates (10cm)
   z_value: 100          # Rendering layer order (higher = on top)
   snap_tolerance: 10    # Pixels - distance to snap to existing node
   hover:
@@ -23,26 +23,55 @@ node:
 
 wall:
   default:
-    width: 0.02         # Meters - wall line width in scene coordinates (2cm)
+    width: 0.04         # Meters - wall line width in scene coordinates (4cm)
   selected:
-    width: 0.03         # Meters - selected wall line width (3cm)
+    width: 0.06         # Meters - selected wall line width (6cm)
   z_value: 50           # Rendering layer order
 
 room:
-  width: 0.02                   # Meters - room boundary line width in scene coordinates (2cm)
+  width: 0.04                   # Meters - room boundary line width in scene coordinates (4cm)
   z_value: 40                   # Rendering layer order
   rotation_handle_offset: 30    # Pixels - distance of rotation handle from centroid
   label_scale: 0.08             # Scale factor for room label text (smaller = smaller text)
   edge:
-    width: 0.02                 # Meters - room edge line width (2cm)
+    width: 0.04                 # Meters - room edge line width (4cm)
     snap_tolerance: 15          # Pixels - distance to snap to first node when closing polygon
   paste_offset: 20              # Pixels - offset when pasting copied items
 
 background:
   z_value: -100                 # Rendering layer order (background is bottom layer)
 
+object:
+  width: 0.04                   # Meters - OBB border line width in scene coordinates (4cm)
+  z_value: 45                   # Rendering layer order (above room=40, below wall=50)
+  handle_size: 0.1              # Meters - corner/rotate handle size in scene coordinates (10cm)
+  rotation_handle_offset: 0.5   # Meters - rotation handle distance from OBB top edge
+  label_scale: 0.015            # Scale factor for object label text (matches room label scale)
+
+custom_polygon:
+  width: 0.04                   # Meters - border line width in scene coordinates (4cm)
+  z_value: 42                   # Rendering layer order (above room=40, below object=45)
+  rotation_handle_offset: 0.5   # Meters - rotation handle distance from centroid
+  label_scale: 0.08             # Scale factor for custom polygon label text
+
+polygon_handle:
+  size: 0.1           # Meters - rotation handle size
+  pen_width: 0.01     # Meters - rotation handle outline width
+
+viewer_3d:
+  font_size: 12       # Points - placeholder text font size
+
+window:
+  width: 1400         # Pixels - initial window width
+  height: 900         # Pixels - initial window height
+  splitter_left: 550  # Pixels - left panel initial width (3D viewer)
+  splitter_right: 550 # Pixels - right panel initial width (2D canvas)
+
 annotation_3d:
   wall_height: 1.5              # Meters - virtual wall height for 3D visualization
   floor_z_level: 0.0            # Z level for room floor planes
   enable_room_planes: true      # Toggle room polygon planes in 3D viewer
   enable_wall_geometry: true    # Toggle virtual wall planes in 3D viewer
+  enable_custom_polygon_planes: true  # Toggle custom polygon planes in 3D viewer
+  enable_object_boxes: true     # Toggle object OBB boxes in 3D viewer
+  object_height: 0.5            # Meters - virtual object box height

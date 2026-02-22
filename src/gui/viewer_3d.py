@@ -1,11 +1,16 @@
 import open3d as o3d
 import open3d.visualization.rendering as rendering
 import numpy as np
+import math
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QImage, QPainter, QColor, QFont
 from PyQt6.QtCore import Qt, QTimer, QPoint
 
-class Viewer3D(QWidget):
+from src.gui.viewer_3d_camera_mixin import CameraMixin
+from src.gui.viewer_3d_annotation_mixin import AnnotationMixin
+
+
+class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
     def __init__(self):
         super().__init__()
         self.renderer = None
@@ -15,6 +20,7 @@ class Viewer3D(QWidget):
         self._shown_once = False  # Track if widget has been shown at least once
 
         # Scene Data
+        self._axes_size = 1.0
         self.geometry = None
         self.plane_geometry = None
         self.material = None
@@ -64,7 +70,8 @@ class Viewer3D(QWidget):
 
             # Create new renderer
             self.renderer = rendering.OffscreenRenderer(w, h)
-            self.renderer.scene.set_background([0.9, 0.9, 0.9, 1.0])
+            bg_img = self._create_gradient_bg(w, h)
+            self.renderer.scene.set_background([0.11, 0.137, 0.212, 1.0], bg_img)
             self.renderer.scene.scene.set_sun_light([0.707, 0.0, -0.707], [1.0, 1.0, 1.0], 75000)
             self.renderer.scene.scene.enable_sun_light(True)
 
@@ -77,6 +84,8 @@ class Viewer3D(QWidget):
                 mat.line_width = 2.0
                 self.renderer.scene.add_geometry("plane", self.plane_geometry, mat)
 
+            self._add_axes_to_scene()
+            self._add_grid_to_scene()
             self.render_scene()
         except Exception as e:
             # Prevent crashes from renderer creation failures
@@ -160,6 +169,7 @@ class Viewer3D(QWidget):
             max_extent = max(extent)
             self.camera_eye = self.camera_center + np.array([0, 0, max_extent * 2.0])
             self.camera_up = np.array([0, 1, 0])
+            self._axes_size = float(max_extent) * 0.2
 
             # Setup Plane placeholder
             self.plane_geometry = o3d.geometry.LineSet()
@@ -174,6 +184,8 @@ class Viewer3D(QWidget):
                 mat_plane.line_width = 2.0
                 self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
 
+            self._add_axes_to_scene()
+            self._add_grid_to_scene()
             self.render_scene()
         except Exception as e:
             print(f"Warning: load_geometry failed: {e}")
@@ -308,6 +320,7 @@ class Viewer3D(QWidget):
                 painter.drawImage(0, 0, self.image)
             else:
                 painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No Data / Loading...")
+
         except Exception as e:
             print(f"Warning: paintEvent failed: {e}")
 
@@ -338,197 +351,109 @@ class Viewer3D(QWidget):
         delta = event.angleDelta().y()
         self.zoom_camera(delta)
         
-    def orbit_camera(self, dx, dy):
-        # Simple Orbit around camera_center
-        # Azimuth (dx) and Elevation (dy)
-        
-        # Convert to spherical? Or just rotate vector
-        # Vector from center to eye
-        v = self.camera_eye - self.camera_center
-        
-        # Rotate around Up axis (Azimuth)
-        # We need to construct interaction properly, but for now simple approximation:
-        # X movement rotates around World UP (0,1,0)
-        # Y movement rotates around Right vector
-        
-        # ... Implementation of rotation matrix ...
-        # Using Open3D geometry functions or numpy
-        
-        sensitivity = 0.01
-        alpha = -dx * sensitivity
-        beta = -dy * sensitivity
-        
-        # Rotate around Y (Global Up)
-        import math
-        # Axis Angle rotation?
-        
-        # Right vector
-        forward = (self.camera_center - self.camera_eye)
-        forward = forward / np.linalg.norm(forward)
-        right = np.cross(forward, self.camera_up)
-        right = right / np.linalg.norm(right)
-        
-        # Rotate v around Y
-        R_y = self.rotation_matrix(np.array([0, 1, 0]), alpha)
-        v = R_y @ v
-        
-        # Rotate v around Right
-        R_x = self.rotation_matrix(right, beta)
-        v = R_x @ v
-        
-        # Update Eye
-        self.camera_eye = self.camera_center + v
-        # Re-orthogonalize Up? 
-        # For simple orbit, keeping Up as (0,1,0) usually works unless we pitch too far.
-        # Let's keep it simple.
-        
-        self.render_scene()
-        
-    def pan_camera(self, dx, dy):
-        sensitivity = 0.01
-        
-        forward = (self.camera_center - self.camera_eye)
-        dist = np.linalg.norm(forward)
-        forward = forward / dist
-        
-        right = np.cross(forward, self.camera_up)
-        right = right / np.linalg.norm(right)
-        
-        up = np.cross(right, forward)
-        
-        # Scale movement by distance
-        move = -right * dx * sensitivity * (dist/10.0) + up * dy * sensitivity * (dist/10.0)
-        
-        self.camera_eye += move
-        self.camera_center += move
-        
-        self.render_scene()
 
-    def zoom_camera(self, delta):
-        # Move eye towards center
-        v = self.camera_center - self.camera_eye
-        dist = np.linalg.norm(v)
-        
-        zoom_speed = 0.1 * (dist if dist > 0.1 else 0.1)
-        
-        if delta > 0:
-            step = 1.0 * zoom_speed
+    def _add_axes_to_scene(self):
+        """Add RGB coordinate axes (X=red, Y=green, Z=blue) at world origin (0,0,0)."""
+        if not self.renderer or self._renderer_failed:
+            return
+
+        if hasattr(self, 'original_geometry') and self.original_geometry:
+            bbox = self.original_geometry.get_axis_aligned_bounding_box()
+            extent = bbox.get_max_bound() - bbox.get_min_bound()
+            size = float(max(extent)) * 0.2
         else:
-            step = -1.0 * zoom_speed
-            
-        move = (v / dist) * step
-        
-        # Don't pass center
-        if np.linalg.norm(move) < dist:
-            self.camera_eye += move
-        
-        self.render_scene()
+            size = self._axes_size
 
-    def rotation_matrix(self, axis, theta):
-        """
-        Return the rotation matrix associated with counterclockwise rotation about
-        the given axis by theta radians.
-        """
-        axis = np.asarray(axis)
-        axis = axis / math.sqrt(np.dot(axis, axis))
-        a = math.cos(theta / 2.0)
-        b, c, d = -axis * math.sin(theta / 2.0)
-        aa, bb, cc, dd = a * a, b * b, c * c, d * d
-        bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
-        return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
-                         [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
-                         [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
+        points = [
+            [0, 0, 0], [size, 0, 0],
+            [0, 0, 0], [0, size, 0],
+            [0, 0, 0], [0, 0, size],
+        ]
+        lines = [[0, 1], [2, 3], [4, 5]]
+        colors = [[0.86, 0.2, 0.2], [0.2, 0.7, 0.2], [0.2, 0.2, 0.86]]
 
-    # --- Annotation Sync Methods ---
-    def add_room_geometry(self, room_id: str, room_mesh):
-        """
-        Add room floor plane to scene.
+        axes_ls = o3d.geometry.LineSet()
+        axes_ls.points = o3d.utility.Vector3dVector(points)
+        axes_ls.lines = o3d.utility.Vector2iVector(lines)
+        axes_ls.colors = o3d.utility.Vector3dVector(colors)
 
-        Args:
-            room_id: Unique room identifier
-            room_mesh: TriangleMesh of the room floor plane
-        """
-        if not self.renderer or self._renderer_failed:
-            return
-
-        # Always remove first to prevent duplicate-name silent failure in Open3D
-        self.renderer.scene.remove_geometry(f"room_{room_id}")
+        self.renderer.scene.remove_geometry("origin_axes")
         mat = rendering.MaterialRecord()
-        mat.shader = "defaultLit"
-        self.renderer.scene.add_geometry(f"room_{room_id}", room_mesh, mat)
-        self.render_scene()
+        mat.shader = "unlitLine"
+        mat.line_width = 3.0
+        self.renderer.scene.add_geometry("origin_axes", axes_ls, mat)
 
-    def remove_room_geometry(self, room_id: str):
-        """Remove room floor plane from scene."""
+    def _create_gradient_bg(self, w: int, h: int):
+        """Create a top-to-bottom navy gradient as an Open3D Image for background."""
+        top = np.array([18, 22, 35], dtype=np.float32)
+        bot = np.array([38, 48, 72], dtype=np.float32)
+        t = np.linspace(0.0, 1.0, h).reshape(-1, 1, 1)
+        gradient = (top * (1.0 - t) + bot * t)             # shape (h, 1, 3)
+        gradient = np.broadcast_to(gradient, (h, w, 3)).copy().astype(np.uint8)
+        return o3d.geometry.Image(gradient)
+
+    def _add_grid_to_scene(self):
+        """Add XY ground plane grid at z=0 as a LineSet."""
         if not self.renderer or self._renderer_failed:
             return
 
-        self.renderer.scene.remove_geometry(f"room_{room_id}")
-        self.render_scene()
-
-    def add_wall_geometry(self, wall_id: str, wall_mesh):
-        """
-        Add virtual wall geometry to scene.
-
-        Creates a 3D wall plane from 2D wall annotation.
-
-        Args:
-            wall_id: Unique identifier for the wall (e.g., "edge_12345")
-            wall_mesh: Open3D TriangleMesh representing the wall
-        """
-        if not self.renderer or self._renderer_failed:
-            return
-
-        # Always remove first to prevent duplicate-name silent failure in Open3D
-        self.renderer.scene.remove_geometry(f"wall_{wall_id}")
-        mat = rendering.MaterialRecord()
-        mat.shader = "defaultLit"
-        self.renderer.scene.add_geometry(f"wall_{wall_id}", wall_mesh, mat)
-        self.render_scene()
-
-    def remove_wall_geometry(self, wall_id: str):
-        """
-        Remove virtual wall geometry from scene.
-
-        Args:
-            wall_id: Unique identifier for the wall to remove
-        """
-        if not self.renderer or self._renderer_failed:
-            return
-
-        # Remove from scene
-        self.renderer.scene.remove_geometry(f"wall_{wall_id}")
-
-        # Re-render
-        self.render_scene()
-
-    def clear_all_walls(self):
-        """Remove all virtual wall geometries from scene."""
-        # Note: This requires tracking wall IDs externally
-        # Current implementation relies on annotation_sync to track and remove individually
-        pass
-
-    def set_geometry_visibility(self, visible: bool):
-        """
-        Toggle visibility of original geometry (point cloud/mesh).
-
-        Args:
-            visible: True to show, False to hide
-        """
-        if not self.renderer or self._renderer_failed:
-            return
-
-        self.geometry_visible = visible
-
-        if visible:
-            # Add geometry back to scene
-            if self.geometry and self.material:
-                self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
+        if hasattr(self, 'original_geometry') and self.original_geometry:
+            bbox = self.original_geometry.get_axis_aligned_bounding_box()
+            min_b = bbox.get_min_bound()
+            max_b = bbox.get_max_bound()
+            extent = max(max_b[0] - min_b[0], max_b[1] - min_b[1])
         else:
-            # Remove geometry from scene
-            self.renderer.scene.remove_geometry("geometry")
+            min_b = np.array([-5.0, -5.0, 0.0])
+            max_b = np.array([5.0, 5.0, 0.0])
+            extent = 10.0
 
-        self.render_scene()
+        spacing = self._grid_spacing(extent)
+        z = 0.0
 
-import math
+        x0 = math.floor(min_b[0] / spacing) * spacing
+        x1 = math.ceil(max_b[0] / spacing) * spacing
+        y0 = math.floor(min_b[1] / spacing) * spacing
+        y1 = math.ceil(max_b[1] / spacing) * spacing
+
+        points, lines = [], []
+        for x in np.arange(x0, x1 + spacing * 0.5, spacing):
+            i = len(points)
+            points += [[x, y0, z], [x, y1, z]]
+            lines.append([i, i + 1])
+        for y in np.arange(y0, y1 + spacing * 0.5, spacing):
+            i = len(points)
+            points += [[x0, y, z], [x1, y, z]]
+            lines.append([i, i + 1])
+
+        if not points:
+            return
+
+        grid_color = [0.255, 0.314, 0.451]   # muted blue-gray
+        ls = o3d.geometry.LineSet()
+        ls.points = o3d.utility.Vector3dVector(points)
+        ls.lines = o3d.utility.Vector2iVector(lines)
+        ls.colors = o3d.utility.Vector3dVector([grid_color] * len(lines))
+
+        self.renderer.scene.remove_geometry("grid")
+        mat = rendering.MaterialRecord()
+        mat.shader = "unlitLine"
+        mat.line_width = 1.0
+        self.renderer.scene.add_geometry("grid", ls, mat)
+
+    def _grid_spacing(self, extent: float) -> float:
+        """Compute a clean grid spacing for the given scene extent (~10 divisions)."""
+        if extent <= 0:
+            return 1.0
+        raw = extent / 10.0
+        mag = 10.0 ** math.floor(math.log10(raw))
+        n = raw / mag
+        if n < 1.5:
+            return mag
+        elif n < 3.5:
+            return 2.0 * mag
+        elif n < 7.5:
+            return 5.0 * mag
+        return 10.0 * mag
+
+
 

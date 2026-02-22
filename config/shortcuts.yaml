@@ -2,7 +2,9 @@ tools:
   select: "Esc"
   wall: "W"
   rect: "R"
-  delete: 
+  custom_polygon: "P"
+  object: "O"
+  delete:
     - "Delete"
     - "Backspace"
 file:

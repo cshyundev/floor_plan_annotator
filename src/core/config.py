@@ -18,6 +18,8 @@ class ConfigManager:
         self.strings = {}
         self.shortcuts = {}
         self.rooms = {}
+        self.custom_polygons = {}
+        self.objects = {}
         self.load_configs()
         
     def load_configs(self):
@@ -44,6 +46,8 @@ class ConfigManager:
         self.strings = load_yaml("strings.yaml")
         self.shortcuts = load_yaml("shortcuts.yaml")
         self.rooms = load_yaml("rooms.yaml")
+        self.custom_polygons = load_yaml("custom_polygons.yaml")
+        self.objects = load_yaml("objects.yaml")
 
     def get_color(self, *keys):
         val = self._get_value(self.colors, keys)
@@ -73,35 +77,117 @@ class ConfigManager:
 
     def get_value(self, category, *keys):
         if category == "colors":
-            # First try colors.yaml, then fall back to ui_config.yaml
-            # This maintains backward compatibility as UI settings were moved from colors to ui_config
-            val = self._get_value(self.colors, keys)
-            if val is None:
-                val = self._get_value(self.ui_config, keys)
-            return val
+            return self._get_value(self.colors, keys)
         elif category == "ui_config":
             return self._get_value(self.ui_config, keys)
         elif category == "shortcuts":
              return self._get_value(self.shortcuts, keys)
         elif category == "rooms":
              return self._get_value(self.rooms, keys)
+        elif category == "custom_polygons":
+             return self._get_value(self.custom_polygons, keys)
+        elif category == "objects":
+             return self._get_value(self.objects, keys)
         return None
+
+    def get_ui_value(self, *keys):
+        """Shorthand for get_value('ui_config', *keys). Raises KeyError if not found."""
+        val = self._get_value(self.ui_config, keys)
+        if val is None:
+            raise KeyError(f"ui_config key not found: {'.'.join(str(k) for k in keys)}")
+        return val
 
     def get_room_type(self, type_key):
         return self._get_value(self.rooms, ["types", type_key])
+
+    def get_custom_polygon_type(self, type_key):
+        return self._get_value(self.custom_polygons, ["types", type_key])
+
+    def get_custom_polygon_types(self):
+        return self.custom_polygons.get("types", {})
+
+    def get_object_type(self, type_key):
+        return self._get_value(self.objects, ["types", type_key])
+
+    def get_object_types(self):
+        return self.objects.get("types", {})
 
     def save_config(self, category):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(os.path.dirname(current_dir))
             config_dir = os.path.join(project_root, "config")
-            
+
             if category == "rooms":
                 path = os.path.join(config_dir, "rooms.yaml")
                 with open(path, 'w') as f:
                     yaml.dump(self.rooms, f, sort_keys=False)
+            elif category == "custom_polygons":
+                path = os.path.join(config_dir, "custom_polygons.yaml")
+                with open(path, 'w') as f:
+                    yaml.dump(self.custom_polygons, f, sort_keys=False)
+            elif category == "objects":
+                path = os.path.join(config_dir, "objects.yaml")
+                with open(path, 'w') as f:
+                    yaml.dump(self.objects, f, sort_keys=False)
         except Exception as e:
             print(f"Error saving config: {e}")
+
+    def add_custom_polygon_type(self, key, name, color, border):
+        if key in self.custom_polygons.get("types", {}):
+            return False
+        if "types" not in self.custom_polygons:
+            self.custom_polygons["types"] = {}
+        max_idx = max((v.get("index", 0) for v in self.custom_polygons["types"].values()), default=0)
+        self.custom_polygons["types"][key] = {
+            "name": name, "color": color, "border": border, "index": max_idx + 1
+        }
+        self.save_config("custom_polygons")
+        return True
+
+    def update_custom_polygon_type(self, key, name=None, color=None, border=None):
+        if key not in self.custom_polygons.get("types", {}):
+            return False
+        if name: self.custom_polygons["types"][key]["name"] = name
+        if color: self.custom_polygons["types"][key]["color"] = color
+        if border: self.custom_polygons["types"][key]["border"] = border
+        self.save_config("custom_polygons")
+        return True
+
+    def delete_custom_polygon_type(self, key):
+        if key not in self.custom_polygons.get("types", {}):
+            return False
+        del self.custom_polygons["types"][key]
+        self.save_config("custom_polygons")
+        return True
+
+    def add_object_type(self, key, name, color, border):
+        if key in self.objects.get("types", {}):
+            return False
+        if "types" not in self.objects:
+            self.objects["types"] = {}
+        max_idx = max((v.get("index", 0) for v in self.objects["types"].values()), default=0)
+        self.objects["types"][key] = {
+            "name": name, "color": color, "border": border, "index": max_idx + 1
+        }
+        self.save_config("objects")
+        return True
+
+    def update_object_type(self, key, name=None, color=None, border=None):
+        if key not in self.objects.get("types", {}):
+            return False
+        if name: self.objects["types"][key]["name"] = name
+        if color: self.objects["types"][key]["color"] = color
+        if border: self.objects["types"][key]["border"] = border
+        self.save_config("objects")
+        return True
+
+    def delete_object_type(self, key):
+        if key not in self.objects.get("types", {}):
+            return False
+        del self.objects["types"][key]
+        self.save_config("objects")
+        return True
 
     def add_room_type(self, key, name, color, border):
         if key in self.rooms.get("types", {}):
@@ -154,3 +240,18 @@ class ConfigManager:
             else:
                 return None
         return curr
+
+
+def apply_theme(app, theme_path=None):
+    """Apply QSS theme stylesheet to QApplication."""
+    if theme_path is None:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        theme_path = os.path.join(project_root, "config", "theme.qss")
+    if os.path.exists(theme_path):
+        try:
+            with open(theme_path, 'r') as f:
+                qss = f.read()
+            app.setStyleSheet(qss)
+        except Exception as e:
+            print(f"Warning: Failed to load theme: {e}")
