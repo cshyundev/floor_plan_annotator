@@ -44,7 +44,8 @@ object:
 
 # Label styling
 label:
-  background: "rgba(26,29,38,200)"  # Semi-transparent dark label background
+  background: "transparent"         # Transparent label background
+  color: "white"                    # White label text
 
 # Canvas world-coordinate axes
 axes:

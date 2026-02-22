@@ -99,6 +99,14 @@ class TestItems(unittest.TestCase):
         label = room.get_label_text()
         self.assertIn("42", label)
 
+    def test_room_item_label_style(self):
+        """RoomItem label should have white text and transparent background."""
+        nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
+        room = RoomItem(nodes, room_type="living_room", room_id="1")
+        html = room.label.toHtml()
+        self.assertIn("transparent", html)
+        self.assertIn("white", html)
+
 
 class TestCustomPolygonItem(unittest.TestCase):
     def setUp(self):
@@ -123,6 +131,14 @@ class TestCustomPolygonItem(unittest.TestCase):
         nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
         item = CustomPolygonItem(nodes, polygon_type="clean_zone", polygon_id="7")
         self.assertIn("7", item.get_label_text())
+
+    def test_custom_polygon_label_style(self):
+        """CustomPolygonItem label should have white text and transparent background."""
+        nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
+        item = CustomPolygonItem(nodes, polygon_type="clean_zone", polygon_id="5")
+        html = item.label.toHtml()
+        self.assertIn("transparent", html)
+        self.assertIn("white", html)
 
 
 class TestObjectItem(unittest.TestCase):
@@ -156,6 +172,15 @@ class TestObjectItem(unittest.TestCase):
         item = ObjectItem(center=center, width=2.0, height=1.0)
         poly = item.polygon()
         self.assertEqual(poly.count(), 4)
+
+    def test_object_label_style(self):
+        """ObjectItem label should have white text and transparent background."""
+        center = QPointF(5.0, 5.0)
+        item = ObjectItem(center=center, width=2.0, height=1.0, angle=0.0,
+                          object_type="furniture", object_id="3")
+        html = item.label.toHtml()
+        self.assertIn("transparent", html)
+        self.assertIn("white", html)
 
 
 if __name__ == "__main__":

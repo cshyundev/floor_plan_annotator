@@ -190,6 +190,26 @@ class MainWindow(QMainWindow):
         view_section.set_content_layout(view_layout)
         main_layout.addWidget(view_section)
 
+        # Section 3: Annotation Visibility
+        anno_section = CollapsibleSection("Annotation Visibility")
+        anno_layout = QVBoxLayout()
+        anno_layout.setContentsMargins(8, 4, 8, 4)
+
+        self._anno_checkboxes = {}
+        for category, label in [("room", "Room"), ("wall", "Wall"),
+                                 ("custom_polygon", "Custom Polygon"),
+                                 ("object", "Object")]:
+            cb = QCheckBox(label)
+            cb.setChecked(True)
+            cb.stateChanged.connect(
+                lambda state, cat=category: self._on_anno_visibility_changed(cat, state)
+            )
+            anno_layout.addWidget(cb)
+            self._anno_checkboxes[category] = cb
+
+        anno_section.set_content_layout(anno_layout)
+        main_layout.addWidget(anno_section)
+
         # Manage Types button
         manage_btn = QPushButton("Manage Types...")
         manage_btn.setStyleSheet("margin: 8px;")
@@ -370,6 +390,12 @@ class MainWindow(QMainWindow):
         """
         if self.annotation_sync:
             self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+
+    def _on_anno_visibility_changed(self, category: str, state: int):
+        """Handle annotation category visibility checkbox change."""
+        from PyQt6.QtCore import Qt
+        visible = (state == Qt.CheckState.Checked.value)
+        self.annotation_sync.set_category_visibility(category, visible)
 
     def on_geometry_visibility_changed(self, state):
         """

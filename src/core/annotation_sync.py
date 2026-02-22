@@ -217,6 +217,9 @@ class AnnotationSync3D:
         self.custom_polygon_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
         self.object_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
 
+        # Runtime visibility state (categories hidden by user via UI)
+        self._hidden_categories: set = set()
+
     def set_world_bounds(self, bounds):
         """Store world bounding box for scene→world Y-axis conversion.
 
@@ -248,6 +251,29 @@ class AnnotationSync3D:
             geometry: Open3D PointCloud or TriangleMesh (ignored)
         """
         pass  # No action needed with new approach
+
+    def set_category_visibility(self, category: str, visible: bool):
+        """Show/hide all annotations of a category in 3D viewer."""
+        if visible:
+            self._hidden_categories.discard(category)
+        else:
+            self._hidden_categories.add(category)
+        self._apply_category_visibility(category, visible)
+
+    def _apply_category_visibility(self, category: str, visible: bool):
+        """Add/remove all geometries of a category from renderer."""
+        geo_map = {
+            "room": (self.room_geometries, self.viewer.add_room_geometry, self.viewer.remove_room_geometry),
+            "wall": (self.wall_geometries, self.viewer.add_wall_geometry, self.viewer.remove_wall_geometry),
+            "custom_polygon": (self.custom_polygon_geometries, self.viewer.add_custom_polygon_geometry, self.viewer.remove_custom_polygon_geometry),
+            "object": (self.object_geometries, self.viewer.add_object_geometry, self.viewer.remove_object_geometry),
+        }
+        geometries, add_fn, remove_fn = geo_map[category]
+        for geo_id, mesh in geometries.items():
+            if visible:
+                add_fn(geo_id, mesh)
+            else:
+                remove_fn(geo_id)
 
     def sync_room_annotation(self, room_item):
         """
@@ -291,9 +317,10 @@ class AnnotationSync3D:
         if room_id in self.room_geometries:
             self.viewer.remove_room_geometry(room_id)
 
-        # Add new room plane
+        # Store geometry; only add to renderer if category is visible
         self.room_geometries[room_id] = room_mesh
-        self.viewer.add_room_geometry(room_id, room_mesh)
+        if "room" not in self._hidden_categories:
+            self.viewer.add_room_geometry(room_id, room_mesh)
 
     def sync_wall_annotation(self, edge_item):
         """
@@ -342,9 +369,10 @@ class AnnotationSync3D:
         if edge_id in self.wall_geometries:
             self.viewer.remove_wall_geometry(edge_id)
 
-        # Add new wall
+        # Store geometry; only add to renderer if category is visible
         self.wall_geometries[edge_id] = wall_mesh
-        self.viewer.add_wall_geometry(edge_id, wall_mesh)
+        if "wall" not in self._hidden_categories:
+            self.viewer.add_wall_geometry(edge_id, wall_mesh)
 
     def sync_custom_polygon_annotation(self, polygon_item):
         """Create/update 3D plane for a custom polygon annotation."""
@@ -371,8 +399,10 @@ class AnnotationSync3D:
         if polygon_id in self.custom_polygon_geometries:
             self.viewer.remove_custom_polygon_geometry(polygon_id)
 
+        # Store geometry; only add to renderer if category is visible
         self.custom_polygon_geometries[polygon_id] = mesh
-        self.viewer.add_custom_polygon_geometry(polygon_id, mesh)
+        if "custom_polygon" not in self._hidden_categories:
+            self.viewer.add_custom_polygon_geometry(polygon_id, mesh)
 
     def sync_object_annotation(self, object_item):
         """Create/update 3D OBB box for an object annotation."""
@@ -400,8 +430,10 @@ class AnnotationSync3D:
         if object_id in self.object_geometries:
             self.viewer.remove_object_geometry(object_id)
 
+        # Store geometry; only add to renderer if category is visible
         self.object_geometries[object_id] = mesh
-        self.viewer.add_object_geometry(object_id, mesh)
+        if "object" not in self._hidden_categories:
+            self.viewer.add_object_geometry(object_id, mesh)
 
     def remove_custom_polygon_annotation(self, polygon_id: str):
         """Remove custom polygon plane geometry."""

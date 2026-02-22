@@ -136,8 +136,12 @@ class ObjectItem(QGraphicsPolygonItem):
         bg = config.get_value("colors", "label", "background")
         if bg is None:
             raise KeyError("colors key not found: label.background")
+        color = config.get_value("colors", "label", "color")
+        if color is None:
+            raise KeyError("colors key not found: label.color")
         self.label.setHtml(
-            f"<div style='background-color:{bg};'>{type_name} ({display_id})</div>"
+            f"<div style='background-color:{bg}; color:{color};'>"
+            f"{type_name} ({display_id})</div>"
         )
 
         # Cache paint-time colors to avoid per-frame config lookup

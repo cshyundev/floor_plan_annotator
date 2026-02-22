@@ -32,7 +32,7 @@ room:
   width: 0.04                   # Meters - room boundary line width in scene coordinates (4cm)
   z_value: 40                   # Rendering layer order
   rotation_handle_offset: 30    # Pixels - distance of rotation handle from centroid
-  label_scale: 0.08             # Scale factor for room label text (smaller = smaller text)
+  label_scale: 0.02             # Scale factor for room label text (smaller = smaller text)
   edge:
     width: 0.04                 # Meters - room edge line width (4cm)
     snap_tolerance: 15          # Pixels - distance to snap to first node when closing polygon
@@ -46,13 +46,13 @@ object:
   z_value: 45                   # Rendering layer order (above room=40, below wall=50)
   handle_size: 0.1              # Meters - corner/rotate handle size in scene coordinates (10cm)
   rotation_handle_offset: 0.5   # Meters - rotation handle distance from OBB top edge
-  label_scale: 0.015            # Scale factor for object label text (matches room label scale)
+  label_scale: 0.02             # Scale factor for object label text
 
 custom_polygon:
   width: 0.04                   # Meters - border line width in scene coordinates (4cm)
   z_value: 42                   # Rendering layer order (above room=40, below object=45)
   rotation_handle_offset: 0.5   # Meters - rotation handle distance from centroid
-  label_scale: 0.08             # Scale factor for custom polygon label text
+  label_scale: 0.02             # Scale factor for custom polygon label text
 
 polygon_handle:
   size: 0.1           # Meters - rotation handle size

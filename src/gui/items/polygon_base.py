@@ -75,7 +75,13 @@ class PolygonItem(QGraphicsPathItem):
         bg = config.get_value("colors", "label", "background")
         if bg is None:
             raise KeyError("colors key not found: label.background")
-        self.label.setHtml(f"<div style='background-color:{bg};'>{self.get_label_text()}</div>")
+        color = config.get_value("colors", "label", "color")
+        if color is None:
+            raise KeyError("colors key not found: label.color")
+        self.label.setHtml(
+            f"<div style='background-color:{bg}; color:{color};'>"
+            f"{self.get_label_text()}</div>"
+        )
         self.update_label_pos()
 
     def update_shape(self):
@@ -104,9 +110,10 @@ class PolygonItem(QGraphicsPathItem):
 
     def update_label_pos(self):
         rect = self.label.boundingRect()
+        s = self.label.scale()
         self.label.setPos(
-            self._centroid.x() - rect.width() / 2,
-            self._centroid.y() - rect.height() / 2
+            self._centroid.x() - rect.width() * s / 2,
+            self._centroid.y() - rect.height() * s / 2
         )
 
     def update_handle_pos(self):
