@@ -356,6 +356,9 @@ class Canvas2D(QGraphicsView):
                     items_to_delete.add(node)
                     for edge in list(node.edges):
                         items_to_delete.add(edge)
+            elif isinstance(item, NodeItem):
+                for edge in list(item.edges):
+                    items_to_delete.add(edge)
 
         cmd = DeleteItemCommand(self.scene, list(items_to_delete), "Delete Items")
         self.push_command(cmd)

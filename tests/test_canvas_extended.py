@@ -8,7 +8,7 @@ if not QApplication.instance():
     app = QApplication(sys.argv)
 
 from src.gui.canvas_2d import Canvas2D
-from src.gui.items import NodeItem, RoomItem, CustomPolygonItem, ObjectItem
+from src.gui.items import NodeItem, EdgeItem, RoomItem, CustomPolygonItem, ObjectItem
 
 class TestCanvasExtended(unittest.TestCase):
     def setUp(self):
@@ -42,6 +42,46 @@ class TestCanvasExtended(unittest.TestCase):
         self.assertIn("Delete Items", cmd.text())
         
         
+    def test_delete_node_also_deletes_connected_edges(self):
+        """Deleting a NodeItem must also delete its connected EdgeItems (BUG-001)."""
+        n1 = NodeItem(0, 0)
+        n2 = NodeItem(10, 0)
+        self.canvas.scene.addItem(n1)
+        self.canvas.scene.addItem(n2)
+        edge = EdgeItem(n1, n2)
+        self.canvas.scene.addItem(edge)
+
+        self.canvas._undo_stack = MagicMock()
+        with patch.object(self.canvas.scene, 'selectedItems', return_value=[n1]):
+            self.canvas.delete_selected_items()
+
+        cmd = self.canvas._undo_stack.push.call_args[0][0]
+        deleted_items = set(cmd.items)
+        self.assertIn(n1, deleted_items)
+        self.assertIn(edge, deleted_items)
+
+    def test_delete_node_with_multiple_edges(self):
+        """Deleting a node connected to multiple edges must delete all of them (BUG-001)."""
+        n1 = NodeItem(0, 0)
+        n2 = NodeItem(10, 0)
+        n3 = NodeItem(0, 10)
+        for n in (n1, n2, n3):
+            self.canvas.scene.addItem(n)
+        edge1 = EdgeItem(n1, n2)
+        edge2 = EdgeItem(n1, n3)
+        self.canvas.scene.addItem(edge1)
+        self.canvas.scene.addItem(edge2)
+
+        self.canvas._undo_stack = MagicMock()
+        with patch.object(self.canvas.scene, 'selectedItems', return_value=[n1]):
+            self.canvas.delete_selected_items()
+
+        cmd = self.canvas._undo_stack.push.call_args[0][0]
+        deleted_items = set(cmd.items)
+        self.assertIn(n1, deleted_items)
+        self.assertIn(edge1, deleted_items)
+        self.assertIn(edge2, deleted_items)
+
     def test_context_menu_event(self):
         pass
 
