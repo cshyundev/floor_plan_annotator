@@ -26,6 +26,7 @@ class Canvas2D(QGraphicsView):
         # View state
         self._user_has_zoomed = False  # Track if user manually zoomed
         self._fit_in_view_on_resize = True  # Whether to auto-fit on resize
+        self._scene_initialized = False  # True after first background load
 
         # Sequential ID counters
         self._next_room_id = 0
@@ -207,19 +208,19 @@ class Canvas2D(QGraphicsView):
 
         self.scene.addItem(self.background_item)
 
-        # Set scene rect to match real-world bounds with some margin
-        margin = max(world_width, world_height) * 0.1
-        self.scene.setSceneRect(
-            min_x - margin,
-            min_y - margin,
-            world_width + 2 * margin,
-            world_height + 2 * margin
-        )
-
-        # Reset zoom state and fit the view to show the entire scene
-        self._user_has_zoomed = False
-        self._fit_in_view_on_resize = True
-        self.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        # Only set scene rect and fit view on first load; preserve zoom/pan on subsequent slices
+        if not self._scene_initialized:
+            margin = max(world_width, world_height) * 0.1
+            self.scene.setSceneRect(
+                min_x - margin,
+                min_y - margin,
+                world_width + 2 * margin,
+                world_height + 2 * margin
+            )
+            self._user_has_zoomed = False
+            self._fit_in_view_on_resize = True
+            self.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+            self._scene_initialized = True
         
     def resizeEvent(self, event):
         """Handle window resize to maintain proper view of the scene.

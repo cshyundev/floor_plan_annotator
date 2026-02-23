@@ -9,6 +9,7 @@ class SliceEngine:
         self._points = None
         self._colors = None
         self._bounds = None
+        self._bounds_2d = None       # Fixed 2D footprint (min_x, min_y, max_x, max_y)
 
         # Mesh-specific
         self._mesh = None
@@ -45,6 +46,10 @@ class SliceEngine:
         else:
             self._colors = np.zeros_like(self._points)
         self._bounds = (self._points.min(axis=0), self._points.max(axis=0))
+        self._bounds_2d = (
+            float(self._points[:, 0].min()), float(self._points[:, 1].min()),
+            float(self._points[:, 0].max()), float(self._points[:, 1].max()),
+        )
 
     def _load_mesh(self, mesh):
         """Load triangle mesh data.
@@ -73,11 +78,19 @@ class SliceEngine:
             self._colors = np.ones_like(self._vertices) * 0.7
 
         self._bounds = (self._vertices.min(axis=0), self._vertices.max(axis=0))
-        
+        self._bounds_2d = (
+            float(self._vertices[:, 0].min()), float(self._vertices[:, 1].min()),
+            float(self._vertices[:, 0].max()), float(self._vertices[:, 1].max()),
+        )
+
     def get_z_range(self):
         if self._bounds is None:
             return 0.0, 1.0
         return self._bounds[0][2], self._bounds[1][2]
+
+    def get_bounds_2d(self):
+        """Return fixed 2D footprint bounds (min_x, min_y, max_x, max_y) from full geometry."""
+        return self._bounds_2d
 
     def slice_at_height(self, z_height, thickness=0.1):
         """Slices geometry at z_height with thickness band.
@@ -102,65 +115,48 @@ class SliceEngine:
         mask = (self._points[:, 2] >= z_min) & (self._points[:, 2] <= z_max)
         return self._points[mask], self._colors[mask]
 
-    def project_to_image(self, points, pixel_size=0.01, padding=10):
+    def project_to_image(self, points, pixel_size=0.01, padding=10, fixed_bounds=None):
         """
         Projects 3D points to a 2D density map / image.
         Args:
             points: Nx3 array
             pixel_size: Size of one pixel in meters (e.g., 0.01 = 1cm/pixel)
+            padding: Padding in pixels around the image
+            fixed_bounds: Optional (min_x, min_y, max_x, max_y) to use instead of
+                          calculating from current points. Keeps image size constant.
         Returns:
             image: 2D numpy array (grayscale image)
-            origin: (x, y) offset in world coordinates corresponding to image (0,0)
+            bounds: (min_x, min_y, max_x, max_y) in world coordinates
             scale: pixels per meter
         """
-        if len(points) == 0:
-            return None, (0,0), 1.0/pixel_size
-            
-        x = points[:, 0]
-        y = points[:, 1]
-        
-        min_x, max_x = x.min(), x.max()
-        min_y, max_y = y.min(), y.max()
-        
+        if fixed_bounds is not None:
+            min_x, min_y, max_x, max_y = fixed_bounds
+        elif len(points) == 0:
+            return None, (0, 0, 0, 0), 1.0 / pixel_size
+        else:
+            min_x, max_x = points[:, 0].min(), points[:, 0].max()
+            min_y, max_y = points[:, 1].min(), points[:, 1].max()
+
         width_m = max_x - min_x
         height_m = max_y - min_y
-        
+
         scale = 1.0 / pixel_size
         w = int(np.ceil(width_m * scale)) + 2 * padding
         h = int(np.ceil(height_m * scale)) + 2 * padding
-        
-        # Create grid
-        # We project Y to image row (inverted? depends on coord sys)
-        # Usually floor plan: X=Right, Y=Up. Image: X=Right, Y=Down.
-        # So we map World Y to Image Height - Y.
-        
+
         img = np.zeros((h, w), dtype=np.uint8)
-        
-        # World to Image coords
-        # img_x = (world_x - min_x) * scale + padding
-        # img_y = h - ((world_y - min_y) * scale + padding)  # Flip Y
-        
-        ix = ((x - min_x) * scale + padding).astype(int)
-        iy = (h - 1) - ((y - min_y) * scale + padding).astype(int)
-        
-        # Clip just in case
-        ix = np.clip(ix, 0, w-1)
-        iy = np.clip(iy, 0, h-1)
-        
-        # Simple density accumulation
-        # For a binary map:
-        img[iy, ix] = 255
-        
-        # Optional: Density map/Blurring/Dilating to make walls clearer
-        # We can use morphological operations to close gaps
-        img = ndimage.binary_dilation(img, iterations=1).astype(np.uint8) * 255
-        
-        world_origin_x = min_x - (padding / scale)
-        world_origin_y = min_y - (padding / scale) # This needs careful handling with Y-flip
-        
-        # Return necessary info to map back from Pixel -> World
-        # World X = (Pixel X * pixel_size) + world_origin_x
-        # World Y = ... calculation needed.
-        
-        # Let's simplify: return origin as (min_x, min_y) and let the caller handle transforms properly.
+
+        if len(points) > 0:
+            x = points[:, 0]
+            y = points[:, 1]
+
+            ix = ((x - min_x) * scale + padding).astype(int)
+            iy = (h - 1) - ((y - min_y) * scale + padding).astype(int)
+
+            ix = np.clip(ix, 0, w - 1)
+            iy = np.clip(iy, 0, h - 1)
+
+            img[iy, ix] = 255
+            img = ndimage.binary_dilation(img, iterations=1).astype(np.uint8) * 255
+
         return img, (min_x, min_y, max_x, max_y), scale

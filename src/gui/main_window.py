@@ -337,6 +337,7 @@ class MainWindow(QMainWindow):
         self.viewer_3d.load_geometry(file_path)
         if self.viewer_3d.geometry:
             self.processor.load_data(self.viewer_3d.geometry)
+            self.canvas_2d._scene_initialized = False
 
             # Initialize annotation sync system
             self.annotation_sync.initialize_geometry(self.viewer_3d.geometry)
@@ -358,8 +359,9 @@ class MainWindow(QMainWindow):
         # 1. Get Slice
         points, colors = self.processor.slice_at_height(self.current_z, thickness=0.1)
 
-        # 2. Project
-        img, bounds, scale = self.processor.project_to_image(points, pixel_size=0.02)
+        # 2. Project (use fixed 2D bounds so canvas size stays constant)
+        bounds_2d = self.processor.get_bounds_2d()
+        img, bounds, scale = self.processor.project_to_image(points, pixel_size=0.02, fixed_bounds=bounds_2d)
 
         # 3. Update 2D
         self.canvas_2d.update_background(img, bounds, scale)
