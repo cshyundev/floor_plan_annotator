@@ -26,7 +26,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| BUG-003 | show original data를 끈 상태에서 slice height 조작시 original data가 보이게 됨 | 3D View / SliceEngine | - | REQ-017 | slice 변경 시 체크박스 자동 활성화로 수정 예정 |
+| *(없음)* | | | | | |
 
 ### Improvement
 

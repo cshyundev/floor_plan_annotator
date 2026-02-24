@@ -372,6 +372,10 @@ class MainWindow(QMainWindow):
         # 4. Update 3D (Show Plane)
         self.viewer_3d.update_slice_plane(self.current_z)
 
+        # 5. Auto-reactivate "Show Original 3D Data" checkbox (BUG-003 / REQ-017)
+        if not self.geometry_visible_checkbox.isChecked():
+            self.geometry_visible_checkbox.setChecked(True)
+
     def load_point_cloud(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open Point Cloud", "", "Point Cloud Files (*.ply *.pcd *.obj *.stl)"
