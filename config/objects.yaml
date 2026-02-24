@@ -35,4 +35,16 @@ types:
     - 80
     - 200
     index: 3
+  obj_b8f5:
+    name: Table
+    color:
+    - 201
+    - 117
+    - 175
+    - 150
+    border:
+    - 138
+    - 39
+    - 107
+    index: 4
 default_type: furniture

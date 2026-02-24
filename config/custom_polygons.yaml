@@ -35,4 +35,16 @@ types:
     - 150
     - 50
     index: 3
+  cpoly_f65a:
+    name: annotation
+    color:
+    - 206
+    - 111
+    - 176
+    - 100
+    border:
+    - 143
+    - 34
+    - 108
+    index: 4
 default_type: clean_zone

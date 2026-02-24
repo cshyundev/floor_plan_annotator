@@ -1,170 +1,28 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
-                             QPushButton, QLineEdit, QColorDialog, QFormLayout, QMessageBox)
-from PyQt6.QtGui import QColor, QPixmap, QIcon
-from PyQt6.QtCore import Qt, pyqtSignal
-from src.core.config import ConfigManager
+from src.gui.base_type_editor import BaseTypeEditorWidget
 
 
-class RoomTypeEditorWidget(QWidget):
-    config_changed = pyqtSignal()
+class RoomTypeEditorWidget(BaseTypeEditorWidget):
+    _dialog_title = "Add Room Type"
+    _key_prefix = "room_"
+    _default_alpha = 100
+    _default_color = [200, 200, 200, 100]
+    _default_border = [100, 100, 100]
+    _in_use_label = "room(s)"
 
-    def __init__(self):
-        super().__init__()
-        self.config = ConfigManager.instance()
-        self.current_key = None
-        self._scene = None
-        self.init_ui()
-        self.load_types()
+    def _get_types(self):
+        return self.config.get_room_types()
 
-    def set_scene(self, scene):
-        self._scene = scene
+    def _get_type(self, key):
+        return self.config.get_room_type(key)
 
-    def init_ui(self):
-        layout = QVBoxLayout(self)
+    def _add_config_type(self, key, name, color, border):
+        return self.config.add_room_type(key, name, color, border)
 
-        # List
-        self.type_list = QListWidget()
-        self.type_list.itemClicked.connect(self.on_item_clicked)
-        layout.addWidget(self.type_list)
+    def _update_config_type(self, key, **kwargs):
+        return self.config.update_room_type(key, **kwargs)
 
-        # Form
-        self.form_widget = QWidget()
-        form_layout = QFormLayout(self.form_widget)
-
-        self.name_edit = QLineEdit()
-        self.name_edit.textChanged.connect(self.on_name_changed)
-        form_layout.addRow("Name:", self.name_edit)
-
-        self.color_btn = QPushButton()
-        self.color_btn.clicked.connect(self.pick_color)
-        form_layout.addRow("Color:", self.color_btn)
-
-        self.border_btn = QPushButton()
-        self.border_btn.clicked.connect(self.pick_border)
-        form_layout.addRow("Border:", self.border_btn)
-
-        layout.addWidget(self.form_widget)
-        self.form_widget.setEnabled(False)
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-        self.add_btn = QPushButton("Add")
-        self.add_btn.clicked.connect(self.add_type)
-        btn_layout.addWidget(self.add_btn)
-
-        self.del_btn = QPushButton("Delete")
-        self.del_btn.clicked.connect(self.delete_type)
-        self.del_btn.setEnabled(False)
-        btn_layout.addWidget(self.del_btn)
-
-        layout.addLayout(btn_layout)
-
-    def load_types(self):
-        self.type_list.clear()
-        types = self.config.get_room_types()
-        sorted_keys = sorted(types.keys(), key=lambda k: types[k].get("index", 0))
-        for key in sorted_keys:
-            self.type_list.addItem(key)
-
-    def on_item_clicked(self, item):
-        self.current_key = item.text()
-        self.form_widget.setEnabled(True)
-        self.del_btn.setEnabled(True)
-
-        data = self.config.get_room_type(self.current_key)
-        if data:
-            self.name_edit.blockSignals(True)
-            self.name_edit.setText(data.get("name", ""))
-            self.name_edit.blockSignals(False)
-
-            self.update_color_btn(self.color_btn, data.get("color", [200, 200, 200, 100]))
-            self.update_color_btn(self.border_btn, data.get("border", [100, 100, 100]))
-
-    def update_color_btn(self, btn, rgba):
-        color = QColor(*rgba)
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(color)
-        btn.setIcon(QIcon(pixmap))
-        btn.setText(f"{rgba}")
-
-    def on_name_changed(self, text):
-        if self.current_key:
-            self.config.update_room_type(self.current_key, name=text)
-            self.config_changed.emit()
-
-    def pick_color(self):
-        if not self.current_key:
-            return
-        data = self.config.get_room_type(self.current_key)
-        curr = data.get("color", [200, 200, 200, 100])
-        initial = QColor(*curr)
-
-        color = QColorDialog.getColor(
-            initial, self, "Select Fill Color",
-            QColorDialog.ColorDialogOption.ShowAlphaChannel
-        )
-        if color.isValid():
-            rgba = [color.red(), color.green(), color.blue(), color.alpha()]
-            self.config.update_room_type(self.current_key, color=rgba)
-            self.update_color_btn(self.color_btn, rgba)
-            self.config_changed.emit()
-
-    def pick_border(self):
-        if not self.current_key:
-            return
-        data = self.config.get_room_type(self.current_key)
-        curr = data.get("border", [100, 100, 100])
-        if len(curr) == 3:
-            curr = curr + [255]
-        initial = QColor(*curr)
-
-        color = QColorDialog.getColor(initial, self, "Select Border Color")
-        if color.isValid():
-            rgb = [color.red(), color.green(), color.blue()]
-            self.config.update_room_type(self.current_key, border=rgb)
-            self.update_color_btn(self.border_btn, rgb)
-            self.config_changed.emit()
-
-    def add_type(self):
-        import uuid
-        key = f"room_{uuid.uuid4().hex[:4]}"
-        name = "New Room"
-        color = [200, 200, 200, 100]
-        border = [100, 100, 100]
-
-        if self.config.add_room_type(key, name, color, border):
-            self.load_types()
-            items = self.type_list.findItems(key, Qt.MatchFlag.MatchExactly)
-            if items:
-                self.type_list.setCurrentItem(items[0])
-                self.on_item_clicked(items[0])
-            self.config_changed.emit()
-
-    def delete_type(self):
-        if not self.current_key:
-            return
-
-        # Check if type is in use by any RoomItem in the scene
-        in_use = self._check_type_in_use(self.current_key)
-        if in_use:
-            reply = QMessageBox.warning(
-                self, "Type In Use",
-                f"Room type '{self.current_key}' is used by {len(in_use)} room(s).\n"
-                "These rooms will show default styling.\nContinue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-
-        self.config.delete_room_type(self.current_key)
-        self.load_types()
-        self.current_key = None
-        self.form_widget.setEnabled(False)
-        self.del_btn.setEnabled(False)
-        self.name_edit.clear()
-        self.color_btn.setIcon(QIcon())
-        self.border_btn.setIcon(QIcon())
-        self.config_changed.emit()
+    def _delete_config_type(self, key):
+        self.config.delete_room_type(key)
 
     def _check_type_in_use(self, type_key):
         if not self._scene:
@@ -174,3 +32,12 @@ class RoomTypeEditorWidget(QWidget):
             item for item in self._scene.items()
             if isinstance(item, RoomItem) and item.room_type == type_key
         ]
+
+    def update_all(self):
+        if not self._scene:
+            return
+        from src.gui.items import RoomItem
+        for item in self._scene.items():
+            if isinstance(item, RoomItem):
+                item.update_style()
+                item.update_overlay()

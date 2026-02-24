@@ -86,13 +86,25 @@ types:
   utility:
     name: Utility
     color:
-    - 200
-    - 200
-    - 200
-    - 100
+    - 192
+    - 28
+    - 40
+    - 255
     border:
     - 150
     - 150
     - 150
     index: 8
+  room_b3a1:
+    name: Master Room
+    color:
+    - 153
+    - 193
+    - 241
+    - 255
+    border:
+    - 100
+    - 100
+    - 100
+    index: 9
 default_type: living_room
