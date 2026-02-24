@@ -25,6 +25,7 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         self.plane_geometry = None
         self.material = None
         self.geometry_visible = True  # Track original geometry visibility
+        self.downsampled_geometry = None  # Downsampled copy for fast preview during drag
 
         # Camera State
         self.camera_eye = np.array([0.0, 0.0, 10.0])
@@ -141,6 +142,9 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
     def load_geometry(self, file_path):
         """Load 3D geometry from file.
 
+        Creates both full-resolution and downsampled copies. The downsampled
+        version is used for fast preview during slider drag (IMP-002).
+
         Note: Gracefully handles renderer failure by loading geometry but not displaying.
         """
         if self._renderer_failed:
@@ -157,6 +161,22 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
                     geom.paint_uniform_color([0.7, 0.7, 0.7])
 
             self.original_geometry = geom
+
+            # Create downsampled copy for fast 3D preview during drag
+            from src.core.config import ConfigManager
+            config = ConfigManager.instance()
+            voxel_size = config.get_ui_value("viewer_3d", "voxel_size")
+            if voxel_size > 0:
+                if hasattr(geom, 'triangles') and len(geom.triangles) > 0:
+                    self.downsampled_geometry = geom.simplify_vertex_clustering(
+                        voxel_size=voxel_size,
+                    )
+                else:
+                    self.downsampled_geometry = geom.voxel_down_sample(
+                        voxel_size=voxel_size,
+                    )
+            else:
+                self.downsampled_geometry = None
 
             # Keep a copy for slicing (initially full)
             import copy
@@ -190,24 +210,18 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         except Exception as e:
             print(f"Warning: load_geometry failed: {e}")
 
-    def update_slice_plane(self, z_height):
-        """Update the slice plane visualization.
+    def _update_plane_indicator(self, z_height):
+        """Update the red slice plane indicator line at z_height.
 
-        Note: Gracefully handles renderer failure.
+        Shared by both dragging and final update paths.
         """
-        # Skip if renderer failed
-        if self._renderer_failed:
+        if not self.renderer:
             return
 
-        # 1. Update Slice Plane Visualization
-        if not hasattr(self, 'original_geometry') or not self.original_geometry:
-            return
-            
-        # 2. Update Plane Geometry (Visual Indicator)
         bbox = self.original_geometry.get_axis_aligned_bounding_box()
         min_b = bbox.get_min_bound()
         max_b = bbox.get_max_bound()
-        
+
         points = [
             [min_b[0], min_b[1], z_height],
             [max_b[0], min_b[1], z_height],
@@ -216,46 +230,73 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         ]
         lines = [[0, 1], [1, 2], [2, 3], [3, 0]]
         colors = [[1, 0, 0] for _ in range(len(lines))]
-        
+
         self.plane_geometry.points = o3d.utility.Vector3dVector(points)
         self.plane_geometry.lines = o3d.utility.Vector2iVector(lines)
         self.plane_geometry.colors = o3d.utility.Vector3dVector(colors)
-        
-        # 3. Crop Geometry
-        # Crop from bottom up to z_height
-        # Note: crop is non-destructive usually returns new geometry
+
+        self.renderer.scene.remove_geometry("plane")
+        mat_plane = rendering.MaterialRecord()
+        mat_plane.shader = "unlitLine"
+        mat_plane.line_width = 2.0
+        self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
+
+    def _crop_and_display(self, source_geometry, z_height):
+        """Crop source_geometry up to z_height and display in scene.
+
+        Args:
+            source_geometry: Geometry to crop (original or downsampled)
+            z_height: Crop upper Z bound
+        """
+        if not self.renderer:
+            return
+
+        bbox = self.original_geometry.get_axis_aligned_bounding_box()
+        min_b = bbox.get_min_bound()
+        max_b = bbox.get_max_bound()
+
         crop_box = o3d.geometry.AxisAlignedBoundingBox(
-            min_bound=[min_b[0], min_b[1], min_b[2] - 100.0], # Allow some margin below
-            max_bound=[max_b[0], max_b[1], z_height]
+            min_bound=[min_b[0], min_b[1], min_b[2] - 100.0],
+            max_bound=[max_b[0], max_b[1], z_height],
         )
-        
-        new_geometry = self.original_geometry.crop(crop_box)
-        
-        # 4. Update Renderer
-        if self.renderer:
-            # Update Plane
-            self.renderer.scene.remove_geometry("plane")
-            mat_plane = rendering.MaterialRecord()
-            mat_plane.shader = "unlitLine"
-            mat_plane.line_width = 2.0
-            self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
-            
-            # Update Geometry
-            self.renderer.scene.remove_geometry("geometry")
-            
-            if not new_geometry.is_empty():
-                self.geometry = new_geometry
-                self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
-            else:
-                # Handle empty geometry case
-                # Open3D might not like remove_geometry if it wasn't there, but we just removed it.
-                # If we don't add anything back, the scene effectively has no "geometry" object.
-                # Next update will try to remove "geometry". Does remove_geometry throw if not found?
-                # It usually logs a warning but doesn't crash.
-                # To be safe, we can track if geometry is in scene.
-                pass
-            
-            self.render_scene()
+
+        new_geometry = source_geometry.crop(crop_box)
+
+        self.renderer.scene.remove_geometry("geometry")
+        if not new_geometry.is_empty():
+            self.geometry = new_geometry
+            self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
+
+        self.render_scene()
+
+    def update_slice_dragging(self, z_height):
+        """Fast 3D update during slider drag using downsampled geometry.
+
+        Falls back to full-resolution if downsampling is disabled.
+        """
+        if self._renderer_failed:
+            return
+        if not hasattr(self, 'original_geometry') or not self.original_geometry:
+            return
+
+        self._update_plane_indicator(z_height)
+
+        source = self.downsampled_geometry or self.original_geometry
+        self._crop_and_display(source, z_height)
+
+    def update_slice_final(self, z_height):
+        """Full-resolution 3D update when slider stops."""
+        if self._renderer_failed:
+            return
+        if not hasattr(self, 'original_geometry') or not self.original_geometry:
+            return
+
+        self._update_plane_indicator(z_height)
+        self._crop_and_display(self.original_geometry, z_height)
+
+    def update_slice_plane(self, z_height):
+        """Update the slice plane visualization (legacy, uses full-resolution)."""
+        self.update_slice_final(z_height)
 
     def render_scene(self):
         """Render the 3D scene to an image.

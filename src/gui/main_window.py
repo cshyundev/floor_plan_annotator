@@ -177,7 +177,17 @@ class MainWindow(QMainWindow):
         self.z_slider = QSlider(Qt.Orientation.Horizontal)
         self.z_slider.setRange(0, 100)
         self.z_slider.valueChanged.connect(self.on_slider_change)
+        self.z_slider.sliderPressed.connect(self._on_slider_pressed)
+        self.z_slider.sliderReleased.connect(self._on_slider_released)
+        self._slider_dragging = False
         view_layout.addWidget(self.z_slider)
+
+        # Debounce timer for full-resolution 3D update after slider stops
+        from PyQt6.QtCore import QTimer
+        self._3d_final_timer = QTimer()
+        self._3d_final_timer.setSingleShot(True)
+        self._3d_final_timer.setInterval(150)
+        self._3d_final_timer.timeout.connect(self._update_3d_final)
 
         self.z_label = QLabel(config.get_string("labels", "z_value").format(0.0))
         view_layout.addWidget(self.z_label)
@@ -352,27 +362,43 @@ class MainWindow(QMainWindow):
             self.current_z = min_z + (value / 100.0) * range_z
             config = ConfigManager.instance()
             self.z_label.setText(config.get_string("labels", "z_value").format(self.current_z))
-            self.update_slice()
 
-    def update_slice(self):
-        """Update the slice visualization."""
-        # 1. Get Slice
+            # Always update 2D immediately (~22ms)
+            self._update_2d_slice()
+
+            # 3D update: fast preview during drag, debounced full-res otherwise
+            if self._slider_dragging:
+                self.viewer_3d.update_slice_dragging(self.current_z)
+            else:
+                # Keyboard/wheel changes: debounce to avoid lag
+                self._3d_final_timer.start()
+
+    def _on_slider_pressed(self):
+        self._slider_dragging = True
+
+    def _on_slider_released(self):
+        self._slider_dragging = False
+        self._3d_final_timer.start()
+
+    def _update_2d_slice(self):
+        """Update 2D slice visualization (fast path, always runs)."""
         points, colors = self.processor.slice_at_height(self.current_z, thickness=0.1)
-
-        # 2. Project (use fixed 2D bounds so canvas size stays constant)
         bounds_2d = self.processor.get_bounds_2d()
         img, bounds, scale = self.processor.project_to_image(points, pixel_size=0.02, fixed_bounds=bounds_2d)
-
-        # 3. Update 2D
         self.canvas_2d.update_background(img, bounds, scale)
-
-        # 3.5. Pass world bounds to annotation sync for Y-axis conversion
         self.annotation_sync.set_world_bounds(bounds)
 
-        # 4. Update 3D (Show Plane)
-        self.viewer_3d.update_slice_plane(self.current_z)
+    def _update_3d_final(self):
+        """Full-resolution 3D update (called after slider stops)."""
+        self.viewer_3d.update_slice_final(self.current_z)
+        # Auto-reactivate "Show Original 3D Data" checkbox (BUG-003 / REQ-017)
+        if not self.geometry_visible_checkbox.isChecked():
+            self.geometry_visible_checkbox.setChecked(True)
 
-        # 5. Auto-reactivate "Show Original 3D Data" checkbox (BUG-003 / REQ-017)
+    def update_slice(self):
+        """Update the full slice visualization (2D + 3D full-res)."""
+        self._update_2d_slice()
+        self.viewer_3d.update_slice_plane(self.current_z)
         if not self.geometry_visible_checkbox.isChecked():
             self.geometry_visible_checkbox.setChecked(True)
 

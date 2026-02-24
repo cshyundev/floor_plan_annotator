@@ -44,6 +44,14 @@ class Viewer3DStub(QWidget):
         """Stub method."""
         pass
 
+    def update_slice_dragging(self, z_height):
+        """Stub method."""
+        pass
+
+    def update_slice_final(self, z_height):
+        """Stub method."""
+        pass
+
     def render_scene(self):
         """Stub method."""
         pass
