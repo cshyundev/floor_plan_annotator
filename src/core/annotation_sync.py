@@ -12,6 +12,8 @@ import open3d as o3d
 from typing import List, Tuple, Dict
 from PyQt6.QtCore import QPointF
 
+from src.core.coordinate_system import CoordinateSystem
+
 
 class RoomPlaneBuilder:
     """
@@ -22,27 +24,25 @@ class RoomPlaneBuilder:
     """
 
     def create_room_plane(self, polygon_2d: List[QPointF], z_level: float,
-                         color: Tuple[float, float, float]) -> o3d.geometry.TriangleMesh:
+                         color: Tuple[float, float, float],
+                         coord_sys: CoordinateSystem | None = None) -> o3d.geometry.TriangleMesh:
         """
         Create a horizontal polygon mesh at z_level.
 
-        Uses fan triangulation to convert the 2D polygon into a 3D mesh.
-        Works well for convex polygons and most room shapes.
-
         Args:
-            polygon_2d: List of QPointF defining room boundary
-            z_level: Z coordinate for the plane (floor level)
+            polygon_2d: List of QPointF defining room boundary (floor_h, floor_v)
+            z_level: Height coordinate for the plane (floor level)
             color: RGB tuple in [0-1] range
+            coord_sys: Coordinate system for axis mapping (defaults to ROS)
 
         Returns:
             Open3D TriangleMesh of the room floor plane
         """
         if len(polygon_2d) < 3:
-            # Need at least 3 vertices for a valid polygon
             return o3d.geometry.TriangleMesh()
 
-        # Convert to 3D vertices at z_level
-        vertices_3d = [[p.x(), p.y(), z_level] for p in polygon_2d]
+        cs = coord_sys or CoordinateSystem.ros()
+        vertices_3d = [cs.make_3d_point(p.x(), p.y(), z_level) for p in polygon_2d]
 
         # Fan triangulation from first vertex
         # Creates triangles: [0,1,2], [0,2,3], [0,3,4], ..., [0,n-2,n-1]
@@ -74,31 +74,28 @@ class WallGeometryBuilder:
 
     def create_wall_mesh(self, start_2d: QPointF, end_2d: QPointF,
                         z_min: float, z_max: float,
-                        color: Tuple[float, float, float]) -> o3d.geometry.TriangleMesh:
+                        color: Tuple[float, float, float],
+                        coord_sys: CoordinateSystem | None = None) -> o3d.geometry.TriangleMesh:
         """
         Create vertical wall plane mesh.
 
-        Creates a rectangular mesh representing a wall:
-        - Bottom edge at z_min
-        - Top edge at z_max
-        - Endpoints from 2D coordinates
-
         Args:
-            start_2d: Wall start point (x, y)
-            end_2d: Wall end point (x, y)
-            z_min: Bottom z coordinate (typically 0)
-            z_max: Top z coordinate (wall height)
+            start_2d: Wall start point (floor_h, floor_v)
+            end_2d: Wall end point (floor_h, floor_v)
+            z_min: Bottom height coordinate
+            z_max: Top height coordinate
             color: RGB tuple in [0-1] range
+            coord_sys: Coordinate system for axis mapping (defaults to ROS)
 
         Returns:
             Open3D TriangleMesh representing the wall
         """
-        # Define 4 vertices of the rectangular wall
+        cs = coord_sys or CoordinateSystem.ros()
         vertices = [
-            [start_2d.x(), start_2d.y(), z_min],  # 0: bottom-left
-            [start_2d.x(), start_2d.y(), z_max],  # 1: top-left
-            [end_2d.x(), end_2d.y(), z_max],      # 2: top-right
-            [end_2d.x(), end_2d.y(), z_min],      # 3: bottom-right
+            cs.make_3d_point(start_2d.x(), start_2d.y(), z_min),
+            cs.make_3d_point(start_2d.x(), start_2d.y(), z_max),
+            cs.make_3d_point(end_2d.x(), end_2d.y(), z_max),
+            cs.make_3d_point(end_2d.x(), end_2d.y(), z_min),
         ]
 
         # Define 2 triangles forming the rectangle
@@ -128,23 +125,26 @@ class ObjectGeometryBuilder:
 
     def create_object_box(self, center: Tuple[float, float], width: float, height: float,
                           angle: float, z_min: float, z_max: float,
-                          color: Tuple[float, float, float]) -> o3d.geometry.TriangleMesh:
+                          color: Tuple[float, float, float],
+                          coord_sys: CoordinateSystem | None = None) -> o3d.geometry.TriangleMesh:
         """
         Create a 3D oriented bounding box mesh.
 
         Args:
-            center: (x, y) center position
+            center: (floor_h, floor_v) center position
             width: Box width in scene units
             height: Box height in scene units
             angle: Rotation angle in degrees
-            z_min: Bottom z coordinate
-            z_max: Top z coordinate
+            z_min: Bottom height coordinate
+            z_max: Top height coordinate
             color: RGB tuple in [0-1] range
+            coord_sys: Coordinate system for axis mapping (defaults to ROS)
 
         Returns:
             Open3D TriangleMesh of the oriented box
         """
         import math
+        cs = coord_sys or CoordinateSystem.ros()
         cx, cy = center
         w, h = width / 2, height / 2
         rad = math.radians(angle)
@@ -159,7 +159,7 @@ class ObjectGeometryBuilder:
             for dx, dy in local_corners:
                 rx = dx * cos_a - dy * sin_a
                 ry = dx * sin_a + dy * cos_a
-                vertices.append([cx + rx, cy + ry, z])
+                vertices.append(cs.make_3d_point(cx + rx, cy + ry, z))
 
         # 12 triangles forming the 6 faces (2 triangles each)
         triangles = [
@@ -208,8 +208,11 @@ class AnnotationSync3D:
         self.wall_builder = WallGeometryBuilder()
         self.object_builder = ObjectGeometryBuilder()
 
-        # World bounds for coordinate conversion (scene Y → world Y)
-        self._world_bounds = None  # (min_x, min_y, max_x, max_y)
+        # Coordinate system (default ROS, updated via set_coordinate_system)
+        self._coord_sys: CoordinateSystem = CoordinateSystem.ros()
+
+        # World bounds for coordinate conversion (scene → world floor_v)
+        self._world_bounds = None  # (min_h, min_v, max_h, max_v)
 
         # Track created geometries
         self.room_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
@@ -220,25 +223,31 @@ class AnnotationSync3D:
         # Runtime visibility state (categories hidden by user via UI)
         self._hidden_categories: set = set()
 
+    def set_coordinate_system(self, coord_sys: CoordinateSystem):
+        """Update the coordinate system used for 3D geometry construction."""
+        self._coord_sys = coord_sys
+
     def set_world_bounds(self, bounds):
-        """Store world bounding box for scene→world Y-axis conversion.
+        """Store world bounding box for scene→world floor-v axis conversion.
 
         Args:
-            bounds: (min_x, min_y, max_x, max_y) from project_to_image
+            bounds: (min_h, min_v, max_h, max_v) from project_to_image
         """
         self._world_bounds = bounds
 
-    def _to_world_y(self, scene_y: float) -> float:
-        """Convert Qt scene Y coordinate to 3D world Y coordinate.
+    def _to_world_floor_v(self, scene_v: float) -> float:
+        """Convert Qt scene vertical coordinate to world floor-v coordinate.
 
-        Qt scene has +Y pointing down; 3D world has +Y pointing up.
-        The background image is Y-flipped in project_to_image, so
-        scene_y=min_y corresponds to world max_y and vice versa.
+        When flip_floor_v is True, the 2D projection flipped the second
+        floor axis, so we invert it back here. When False, scene coordinate
+        equals world coordinate directly.
         """
         if self._world_bounds is None:
-            return scene_y
-        min_y, max_y = self._world_bounds[1], self._world_bounds[3]
-        return (max_y + min_y) - scene_y
+            return scene_v
+        if not self._coord_sys.flip_floor_v:
+            return scene_v
+        min_v, max_v = self._world_bounds[1], self._world_bounds[3]
+        return (max_v + min_v) - scene_v
 
     def initialize_geometry(self, geometry):
         """
@@ -291,7 +300,7 @@ class AnnotationSync3D:
 
         # Extract polygon from room nodes and convert to world coordinates
         polygon_2d = [
-            QPointF(node.pos().x(), self._to_world_y(node.pos().y()))
+            QPointF(node.pos().x(), self._to_world_floor_v(node.pos().y()))
             for node in room_item.nodes
         ]
 
@@ -304,11 +313,13 @@ class AnnotationSync3D:
         else:
             color = (0.7, 0.7, 0.7)  # Default gray
 
-        # Get floor z level from config
-        z_level = self.config.get_ui_value("annotation_3d", "floor_z_level")
+        # Floor level from coordinate system
+        z_level = self._coord_sys.floor_level
 
         # Create room plane mesh
-        room_mesh = self.room_builder.create_room_plane(polygon_2d, z_level, color)
+        room_mesh = self.room_builder.create_room_plane(
+            polygon_2d, z_level, color, self._coord_sys
+        )
 
         # Get room ID
         room_id = room_item.room_id
@@ -338,11 +349,11 @@ class AnnotationSync3D:
         # Get start and end positions (converted to world coordinates)
         start_2d = QPointF(
             edge_item.start_node.pos().x(),
-            self._to_world_y(edge_item.start_node.pos().y())
+            self._to_world_floor_v(edge_item.start_node.pos().y())
         )
         end_2d = QPointF(
             edge_item.end_node.pos().x(),
-            self._to_world_y(edge_item.end_node.pos().y())
+            self._to_world_floor_v(edge_item.end_node.pos().y())
         )
 
         # Get wall color from config
@@ -354,12 +365,14 @@ class AnnotationSync3D:
         else:
             color = (0.8, 0.8, 0.8)  # Default light gray
 
-        # Create wall mesh
+        # Create wall mesh using floor level from coordinate system
+        floor_level = self._coord_sys.floor_level
         wall_mesh = self.wall_builder.create_wall_mesh(
             start_2d, end_2d,
-            z_min=0.0,
-            z_max=wall_height,
-            color=color
+            z_min=floor_level,
+            z_max=floor_level + wall_height,
+            color=color,
+            coord_sys=self._coord_sys,
         )
 
         # Get edge ID
@@ -380,7 +393,7 @@ class AnnotationSync3D:
             return
 
         polygon_2d = [
-            QPointF(node.pos().x(), self._to_world_y(node.pos().y()))
+            QPointF(node.pos().x(), self._to_world_floor_v(node.pos().y()))
             for node in polygon_item.nodes
         ]
 
@@ -391,9 +404,11 @@ class AnnotationSync3D:
         else:
             color = (0.4, 0.85, 0.4)
 
-        z_level = self.config.get_ui_value("annotation_3d", "floor_z_level")
+        z_level = self._coord_sys.floor_level
 
-        mesh = self.room_builder.create_room_plane(polygon_2d, z_level, color)
+        mesh = self.room_builder.create_room_plane(
+            polygon_2d, z_level, color, self._coord_sys
+        )
 
         polygon_id = polygon_item.polygon_id
         if polygon_id in self.custom_polygon_geometries:
@@ -416,14 +431,15 @@ class AnnotationSync3D:
         else:
             color = (0.6, 0.78, 1.0)
 
-        z_min = self.config.get_ui_value("annotation_3d", "floor_z_level")
+        floor_level = self._coord_sys.floor_level
         obj_height = self.config.get_ui_value("annotation_3d", "object_height")
-        z_max = z_min + obj_height
+        z_max = floor_level + obj_height
 
-        center = (object_item.center.x(), self._to_world_y(object_item.center.y()))
+        center = (object_item.center.x(), self._to_world_floor_v(object_item.center.y()))
         mesh = self.object_builder.create_object_box(
             center, object_item.width, object_item.height,
-            object_item.angle, z_min, z_max, color
+            object_item.angle, floor_level, z_max, color,
+            coord_sys=self._coord_sys,
         )
 
         object_id = object_item.object_id
