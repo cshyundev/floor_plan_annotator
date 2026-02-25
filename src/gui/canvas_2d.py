@@ -357,27 +357,48 @@ class Canvas2D(QGraphicsView):
         self.clipboard_manager.paste_clipboard()
 
     def delete_selected_items(self):
-        from src.gui.items import RoomItem, NodeItem, CustomPolygonItem, ObjectItem
+        from src.gui.items import RoomItem, NodeItem, CustomPolygonItem, ObjectItem, EdgeItem
         from src.core.undo_commands import DeleteItemCommand
 
         selected = self.scene.selectedItems()
         if not selected:
             return
 
-        # Collect all items to delete
         items_to_delete = set(selected)
+
+        # Explicitly selected NodeItems → cascade to their edges
         for item in selected:
-            if isinstance(item, (RoomItem, CustomPolygonItem)):
-                for node in item.nodes:
-                    items_to_delete.add(node)
-                    for edge in list(node.edges):
-                        items_to_delete.add(edge)
-            elif isinstance(item, NodeItem):
+            if isinstance(item, NodeItem):
                 for edge in list(item.edges):
                     items_to_delete.add(edge)
 
+        # Deleted polygons → cascade boundary edges first
+        for item in selected:
+            if isinstance(item, (RoomItem, CustomPolygonItem)):
+                for node in item.nodes:
+                    for edge in list(node.edges):
+                        if getattr(edge, 'is_boundary_edge', False):
+                            items_to_delete.add(edge)
+
+        # Polygon nodes → orphan check (only delete if no surviving connections)
+        for item in selected:
+            if isinstance(item, (RoomItem, CustomPolygonItem)):
+                for node in item.nodes:
+                    if node in items_to_delete:
+                        continue
+                    if self._node_becomes_orphan(node, items_to_delete):
+                        items_to_delete.add(node)
+                        for edge in list(node.edges):
+                            items_to_delete.add(edge)
+
         cmd = DeleteItemCommand(self.scene, list(items_to_delete), "Delete Items")
         self.push_command(cmd)
+
+    def _node_becomes_orphan(self, node, items_to_delete):
+        """Return True if node has no surviving edges or polygons after deletion."""
+        surviving_edges = [e for e in node.edges if e not in items_to_delete]
+        surviving_polygons = [p for p in node.polygons if p not in items_to_delete]
+        return not surviving_edges and not surviving_polygons
 
     def update_all_rooms(self):
         from src.gui.items import RoomItem

@@ -25,3 +25,4 @@
 - [REQ-021: Occupancy Grid Annotation](REQ-021.md) — Accepted
 - [REQ-022: Coordinate System Configuration](REQ-022.md) — Implemented
 - [REQ-023: 2D Slice Color Projection](REQ-023.md) — Implemented
+- [REQ-024: Shared Nodes Between Annotations](REQ-024.md) — Accepted

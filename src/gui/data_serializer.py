@@ -212,6 +212,7 @@ class DataSerializer:
 
             if not existing_edge:
                 edge = EdgeItem(n_start, n_end)
+                edge.is_boundary_edge = True
                 self.canvas.scene.addItem(edge)
 
     def _restore_background(self):

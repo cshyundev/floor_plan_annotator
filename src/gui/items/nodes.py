@@ -185,6 +185,8 @@ class EdgeItem(QGraphicsLineItem):
         # Generate unique ID for 3D wall geometry tracking
         self.edge_id = f"edge_{id(self)}"
 
+        self.is_boundary_edge = False
+
         # Register self to nodes
         self.start_node.add_edge(self)
         self.end_node.add_edge(self)

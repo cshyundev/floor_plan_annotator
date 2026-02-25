@@ -19,6 +19,7 @@ class DrawPolygonTool(Tool):
         super().__init__(canvas)
         self.current_nodes = []
         self.temp_edges = []
+        self._shared_nodes = set()
         self._press_pos = None
         self._is_dragging = False
         self._passthrough = False
@@ -90,11 +91,7 @@ class DrawPolygonTool(Tool):
         self._add_node(pos)
 
     def _is_clicking_existing_item(self, pos):
-        """Check if clicking on an existing NodeItem or same-type polygon item."""
-        items = self.scene.items(pos)
-        for item in items:
-            if isinstance(item, NodeItem):
-                return True
+        """Check if clicking on a same-type polygon item (for passthrough only)."""
         return self._find_polygon_item_at(pos) is not None
 
     def _should_close_polygon(self, pos):
@@ -116,11 +113,18 @@ class DrawPolygonTool(Tool):
         return distance_squared < (tolerance_pixels * tolerance_pixels)
 
     def _add_node(self, pos):
-        """Add a new node to the current polygon."""
+        """Add a node to the current polygon, reusing an existing NodeItem if present."""
         anchor = self.current_nodes[-1].pos() if self.current_nodes else None
         snapped = self.snap_manager.snap_drawing_point(pos, anchor_pos=anchor)
-        node = NodeItem(snapped.x(), snapped.y())
-        self.scene.addItem(node)
+
+        existing = self.find_node_at(snapped)
+        if existing is not None:
+            node = existing
+            self._shared_nodes.add(node)
+        else:
+            node = NodeItem(snapped.x(), snapped.y())
+            self.scene.addItem(node)
+
         self.current_nodes.append(node)
 
         if len(self.current_nodes) > 1:
@@ -171,9 +175,10 @@ class DrawPolygonTool(Tool):
         self.snap_manager.clear_guides()
         self._remove_temp_edges()
         for n in self.current_nodes:
-            if n.scene() == self.scene:
+            if n not in self._shared_nodes and n.scene() == self.scene:
                 self.scene.removeItem(n)
         self.current_nodes = []
+        self._shared_nodes.clear()
 
 
 class DrawRoomTool(DrawPolygonTool):
@@ -196,7 +201,8 @@ class DrawRoomTool(DrawPolygonTool):
 
         selected_key = self._select_room_type()
 
-        for n in self.current_nodes:
+        new_nodes = [n for n in self.current_nodes if n not in self._shared_nodes]
+        for n in new_nodes:
             if n.scene() == self.scene:
                 self.scene.removeItem(n)
 
@@ -207,10 +213,11 @@ class DrawRoomTool(DrawPolygonTool):
             room_id=room_id
         )
 
-        all_items = self.current_nodes + [room_item]
+        all_items = new_nodes + [room_item]
         cmd = AddItemCommand(self.scene, all_items, "Add Room")
         self.canvas.push_command(cmd)
 
+        self._shared_nodes.clear()
         self.current_nodes = []
         self.canvas.status_message.emit(f"Room '{selected_key}' created.")
 
@@ -249,7 +256,8 @@ class DrawCustomPolygonTool(DrawPolygonTool):
 
         selected_key = self._select_custom_polygon_type()
 
-        for n in self.current_nodes:
+        new_nodes = [n for n in self.current_nodes if n not in self._shared_nodes]
+        for n in new_nodes:
             if n.scene() == self.scene:
                 self.scene.removeItem(n)
 
@@ -260,10 +268,11 @@ class DrawCustomPolygonTool(DrawPolygonTool):
             polygon_id=polygon_id
         )
 
-        all_items = self.current_nodes + [polygon_item]
+        all_items = new_nodes + [polygon_item]
         cmd = AddItemCommand(self.scene, all_items, "Add Custom Polygon")
         self.canvas.push_command(cmd)
 
+        self._shared_nodes.clear()
         self.current_nodes = []
         self.canvas.status_message.emit(f"Custom polygon '{selected_key}' created.")
 

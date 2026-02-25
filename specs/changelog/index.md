@@ -1,5 +1,6 @@
 # Changelog Index
 
+- 2026-02-25 [Added] Shared nodes between annotations: polygon drawing tools (room, custom polygon) reuse existing NodeItems on click, smart orphan detection on deletion preserves shared nodes, boundary edge tagging for correct load/delete behavior (FEAT-004, REQ-024)
 - 2026-02-25 [Added] 2D slice color projection: project_to_image() colors parameter for topmost-point RGB rendering, Canvas2D RGB support, white default for colorless point clouds (IMP-001, REQ-023)
 - 2026-02-25 [Added] Occupancy Grid Map loading and annotation support: ROS2 map_server format, 2D background, 3D block mesh, Map Info section, project save/load v3.0 (FEAT-003, REQ-021) ([detail](2026-02-25-occupancy-grid-map-support.md))
 - 2026-02-25 [Added] Snap & Alignment Guide System with annotation precision convenience features (FEAT-002, REQ-020) ([detail](2026-02-25-snap-alignment-guide-system.md))
