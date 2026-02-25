@@ -5,6 +5,7 @@ window:
 menu:
   file: "File"
   load_point_cloud: "Load Point Cloud"
+  load_occupancy_grid: "Load Occupancy Grid..."
   open_project: "Open Project..."
   save_project: "Save Project..."
   exit: "Exit"

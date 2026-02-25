@@ -205,31 +205,57 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
             else:
                 self.downsampled_geometry = None
 
-            # Keep a copy for slicing (initially full)
-            import copy
-            self.geometry = copy.deepcopy(self.original_geometry)
-
-            # Center camera based on coordinate system (only on new load)
-            self._reset_camera_for_coord_sys()
-
-            # Setup Plane placeholder
-            self.plane_geometry = o3d.geometry.LineSet()
-
-            # Update Renderer
-            if self.renderer and self.material:
-                self.renderer.scene.clear_geometry()
-                self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
-
-                mat_plane = rendering.MaterialRecord()
-                mat_plane.shader = "unlitLine"
-                mat_plane.line_width = 2.0
-                self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
-
-            self._add_axes_to_scene()
-            self._add_grid_to_scene()
-            self.render_scene()
+            self._setup_geometry()
         except Exception as e:
             print(f"Warning: load_geometry failed: {e}")
+
+    def set_geometry(self, geometry):
+        """Set pre-created geometry directly (no file loading).
+
+        Used for generated meshes like occupancy grid 3D visualization.
+        No downsampling is performed.
+
+        Args:
+            geometry: Open3D PointCloud or TriangleMesh object.
+        """
+        if self._renderer_failed:
+            print("Warning: Viewer3D renderer failed, cannot set geometry")
+            return
+
+        try:
+            self.original_geometry = geometry
+            self.downsampled_geometry = None
+            self._setup_geometry()
+        except Exception as e:
+            print(f"Warning: set_geometry failed: {e}")
+
+    def _setup_geometry(self):
+        """Common setup after geometry is assigned to original_geometry.
+
+        Copies geometry, resets camera, sets up plane, and updates renderer.
+        """
+        import copy
+        self.geometry = copy.deepcopy(self.original_geometry)
+
+        # Center camera based on coordinate system
+        self._reset_camera_for_coord_sys()
+
+        # Setup Plane placeholder
+        self.plane_geometry = o3d.geometry.LineSet()
+
+        # Update Renderer
+        if self.renderer and self.material:
+            self.renderer.scene.clear_geometry()
+            self.renderer.scene.add_geometry("geometry", self.geometry, self.material)
+
+            mat_plane = rendering.MaterialRecord()
+            mat_plane.shader = "unlitLine"
+            mat_plane.line_width = 2.0
+            self.renderer.scene.add_geometry("plane", self.plane_geometry, mat_plane)
+
+        self._add_axes_to_scene()
+        self._add_grid_to_scene()
+        self.render_scene()
 
     def _update_plane_indicator(self, z_height):
         """Update the red slice plane indicator line at z_height.

@@ -83,6 +83,9 @@ snap:
   relative_offsets: [0, 90]       # Relative angle offsets (0=parallel, 90=perpendicular)
   guide_z_value: 200              # Rendering layer for guide lines (above all annotations)
 
+occupancy_grid:
+  block_height: 0.3              # Meters - occupied cell block height for 3D visualization
+
 annotation_3d:
   wall_height: 1.5              # Meters - virtual wall height for 3D visualization
   floor_z_level: 0.0            # Z level for room floor planes (legacy, superseded by coordinate_system.floor_level)

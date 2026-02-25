@@ -223,6 +223,16 @@ class AnnotationSync3D:
         # Runtime visibility state (categories hidden by user via UI)
         self._hidden_categories: set = set()
 
+        # Enabled flag (disabled in occupancy grid mode to skip 3D sync)
+        self._enabled = True
+
+    def set_enabled(self, enabled: bool):
+        """Enable or disable 3D annotation sync.
+
+        Disabled in occupancy grid mode to skip unnecessary 3D geometry creation.
+        """
+        self._enabled = enabled
+
     def set_coordinate_system(self, coord_sys: CoordinateSystem):
         """Update the coordinate system used for 3D geometry construction."""
         self._coord_sys = coord_sys
@@ -294,6 +304,8 @@ class AnnotationSync3D:
         Args:
             room_item: RoomItem instance from canvas
         """
+        if not self._enabled:
+            return
         # Check if room planes are enabled
         if not self.config.get_ui_value("annotation_3d", "enable_room_planes"):
             return
@@ -340,6 +352,8 @@ class AnnotationSync3D:
         Args:
             edge_item: EdgeItem instance from canvas
         """
+        if not self._enabled:
+            return
         if not self.config.get_ui_value("annotation_3d", "enable_wall_geometry"):
             return
 
@@ -389,6 +403,8 @@ class AnnotationSync3D:
 
     def sync_custom_polygon_annotation(self, polygon_item):
         """Create/update 3D plane for a custom polygon annotation."""
+        if not self._enabled:
+            return
         if not self.config.get_ui_value("annotation_3d", "enable_custom_polygon_planes"):
             return
 
@@ -421,6 +437,8 @@ class AnnotationSync3D:
 
     def sync_object_annotation(self, object_item):
         """Create/update 3D OBB box for an object annotation."""
+        if not self._enabled:
+            return
         if not self.config.get_ui_value("annotation_3d", "enable_object_boxes"):
             return
 
@@ -494,6 +512,9 @@ class AnnotationSync3D:
         Args:
             scene: QGraphicsScene containing all annotation items
         """
+        if not self._enabled:
+            return
+
         # Clear all existing geometries
         for room_id in list(self.room_geometries.keys()):
             self.viewer.remove_room_geometry(room_id)

@@ -124,16 +124,64 @@ class CustomPolygon(AnnotationBase):
         )
 
 @dataclass
+class MapMetadata:
+    """ROS2 map_server compatible occupancy grid metadata."""
+    image_path: str = ""
+    image_path_absolute: str = ""
+    resolution: float = 0.05
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    origin_yaw: float = 0.0
+    negate: int = 0
+    occupied_thresh: float = 0.65
+    free_thresh: float = 0.196
+    image_width: int = 0
+    image_height: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "image_path": self.image_path,
+            "image_path_absolute": self.image_path_absolute,
+            "resolution": self.resolution,
+            "origin_x": self.origin_x,
+            "origin_y": self.origin_y,
+            "origin_yaw": self.origin_yaw,
+            "negate": self.negate,
+            "occupied_thresh": self.occupied_thresh,
+            "free_thresh": self.free_thresh,
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "MapMetadata":
+        return MapMetadata(
+            image_path=d.get("image_path", ""),
+            image_path_absolute=d.get("image_path_absolute", ""),
+            resolution=d.get("resolution", 0.05),
+            origin_x=d.get("origin_x", 0.0),
+            origin_y=d.get("origin_y", 0.0),
+            origin_yaw=d.get("origin_yaw", 0.0),
+            negate=d.get("negate", 0),
+            occupied_thresh=d.get("occupied_thresh", 0.65),
+            free_thresh=d.get("free_thresh", 0.196),
+            image_width=d.get("image_width", 0),
+            image_height=d.get("image_height", 0),
+        )
+
+
+@dataclass
 class ProjectData:
     walls: List[Wall] = field(default_factory=list)
     rooms: List[Room] = field(default_factory=list)
     objects: List[Object] = field(default_factory=list)
     custom_polygons: List[CustomPolygon] = field(default_factory=list)
     coordinate_system: CoordinateSystem = field(default_factory=CoordinateSystem.ros)
-    version: str = "2.0"
+    map_metadata: Optional[MapMetadata] = None
+    version: str = "3.0"
 
     def to_dict(self):
-        return {
+        d = {
             "version": self.version,
             "coordinate_system": self.coordinate_system.to_dict(),
             "walls": [w.to_dict() for w in self.walls],
@@ -141,6 +189,9 @@ class ProjectData:
             "objects": [o.to_dict() for o in self.objects],
             "custom_polygons": [cp.to_dict() for cp in self.custom_polygons],
         }
+        if self.map_metadata is not None:
+            d["map_metadata"] = self.map_metadata.to_dict()
+        return d
 
     @staticmethod
     def from_dict(d):
@@ -154,4 +205,6 @@ class ProjectData:
         proj.rooms = [Room.from_dict(r) for r in d.get('rooms', [])]
         proj.objects = [Object.from_dict(o) for o in d.get('objects', [])]
         proj.custom_polygons = [CustomPolygon.from_dict(cp) for cp in d.get('custom_polygons', [])]
+        if 'map_metadata' in d:
+            proj.map_metadata = MapMetadata.from_dict(d['map_metadata'])
         return proj

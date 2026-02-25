@@ -1,13 +1,18 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QSplitter, QFileDialog, QSlider, QLabel, QDockWidget,
-                             QToolBar, QStatusBar, QCheckBox, QPushButton, QScrollArea)
+                             QToolBar, QStatusBar, QCheckBox, QPushButton, QScrollArea,
+                             QMessageBox)
 from PyQt6.QtGui import QAction, QActionGroup, QUndoStack
 from PyQt6.QtCore import Qt
 from src.gui.canvas_2d import Canvas2D
 from src.gui.collapsible_section import CollapsibleSection
 from src.gui.properties_panel import PropertiesPanel
 from src.core.processor import SliceEngine
+from src.core.map_loader import MapLoader
+from src.core.map_mesh_generator import MapMeshGenerator
+from src.model.data import MapMetadata
 import numpy as np
+import os
 
 from src.core.config import ConfigManager
 from src.core.coordinate_system import CoordinateSystem
@@ -64,6 +69,10 @@ class MainWindow(QMainWindow):
         # Type editor dialog (lazy-created)
         self._type_editor_dialog = None
 
+        # Occupancy grid state
+        self._map_metadata = None  # type: MapMetadata | None
+        self._map_image_data = None  # type: np.ndarray | None
+
         # Controls (Dock)
         self.create_controls()
 
@@ -97,6 +106,10 @@ class MainWindow(QMainWindow):
         load_action.triggered.connect(self.load_point_cloud)
         file_menu.addAction(load_action)
 
+        load_occ_action = QAction(config.get_string("menu", "load_occupancy_grid"), self)
+        load_occ_action.triggered.connect(self.load_occupancy_grid)
+        file_menu.addAction(load_occ_action)
+
         file_menu.addSeparator()
 
         open_proj_action = QAction(config.get_string("menu", "open_project"), self)
@@ -129,7 +142,14 @@ class MainWindow(QMainWindow):
             project_data = self.canvas_2d.save_to_data()
             # 2. Attach coordinate system
             project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
-            # 3. Save
+            # 3. Attach map metadata with relative path
+            if self._map_metadata is not None:
+                meta_copy = MapMetadata.from_dict(self._map_metadata.to_dict())
+                meta_copy.image_path = MapLoader.make_relative_path(
+                    self._map_metadata.image_path_absolute, file_path
+                )
+                project_data.map_metadata = meta_copy
+            # 4. Save
             ProjectIO.save_project(project_data, file_path)
             print(f"Project saved to {file_path}")
 
@@ -143,8 +163,16 @@ class MainWindow(QMainWindow):
             cs = project_data.coordinate_system
             self.coord_sys_widget.set_coordinate_system(cs)
             self._apply_coordinate_system(cs)
-            # 3. Populate canvas
+            # 3. Clear dangling background pointer before scene.clear()
+            self.canvas_2d.background_item = None
+            # 4. Populate canvas
             self.canvas_2d.load_from_data(project_data)
+            # 5. Restore occupancy grid if present
+            if project_data.map_metadata is not None:
+                self._restore_occupancy_grid(project_data.map_metadata, file_path)
+            else:
+                # Point cloud mode — ensure 3D controls are fully enabled
+                self._set_3d_controls_for_point_cloud()
             print(f"Project loaded from {file_path}")
 
     def create_controls(self):
@@ -189,7 +217,25 @@ class MainWindow(QMainWindow):
         cs_section.set_content_layout(cs_layout)
         main_layout.addWidget(cs_section)
 
-        # Section 3: View Controls
+        # Section 3: Map Info (hidden until occupancy grid loaded)
+        self._map_info_section = CollapsibleSection("Map Info")
+        map_info_layout = QVBoxLayout()
+        map_info_layout.setContentsMargins(8, 4, 8, 4)
+        self._map_info_file_label = QLabel("File: —")
+        self._map_info_resolution_label = QLabel("Resolution: —")
+        self._map_info_origin_label = QLabel("Origin: —")
+        self._map_info_size_label = QLabel("Size: —")
+        self._map_info_block_height_label = QLabel("Block Height: —")
+        for lbl in [self._map_info_file_label, self._map_info_resolution_label,
+                    self._map_info_origin_label, self._map_info_size_label,
+                    self._map_info_block_height_label]:
+            lbl.setWordWrap(True)
+            map_info_layout.addWidget(lbl)
+        self._map_info_section.set_content_layout(map_info_layout)
+        self._map_info_section.setVisible(False)
+        main_layout.addWidget(self._map_info_section)
+
+        # Section 4: View Controls
         view_section = CollapsibleSection("View Controls")
         view_layout = QVBoxLayout()
         view_layout.setContentsMargins(8, 4, 8, 4)
@@ -325,7 +371,6 @@ class MainWindow(QMainWindow):
         self.canvas_2d.status_message.connect(self.statusBar().showMessage)
 
         # Auto-load dummy data for development
-        import os
         dummy_paths = ["data/layout_dummy.ply", "layout_dummy.ply"]
         target_path = None
         for p in dummy_paths:
@@ -467,6 +512,203 @@ class MainWindow(QMainWindow):
         self.processor.set_coordinate_system(cs)
         self.viewer_3d.set_coordinate_system(cs)
         self.annotation_sync.set_coordinate_system(cs)
+
+    def load_occupancy_grid(self):
+        """Load a ROS2 occupancy grid map (YAML or image)."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Occupancy Grid", "",
+            "Map Files (*.yaml *.yml *.pgm *.png);;YAML Files (*.yaml *.yml);;Image Files (*.pgm *.png)"
+        )
+        if not file_path:
+            return
+
+        # Warn if existing annotations (not just background pixmap)
+        from src.gui.items import RoomItem, EdgeItem, CustomPolygonItem, ObjectItem
+        annotation_types = (RoomItem, EdgeItem, CustomPolygonItem, ObjectItem)
+        has_annotations = any(
+            isinstance(item, annotation_types)
+            for item in self.canvas_2d.scene.items()
+        )
+        if has_annotations:
+            reply = QMessageBox.question(
+                self, "Load Occupancy Grid",
+                "Loading an occupancy grid will clear the current scene.\nContinue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        ext = os.path.splitext(file_path)[1].lower()
+        try:
+            if ext in ('.yaml', '.yml'):
+                metadata = MapLoader.parse_yaml(file_path)
+                image_path = metadata.image_path_absolute
+            else:
+                # Image file — try to find companion YAML
+                yaml_path = MapLoader.find_yaml_for_image(file_path)
+                if yaml_path:
+                    metadata = MapLoader.parse_yaml(yaml_path)
+                    image_path = metadata.image_path_absolute
+                else:
+                    # No YAML found — show manual metadata dialog
+                    from src.gui.map_metadata_dialog import MapMetadataDialog
+                    dlg = MapMetadataDialog(self)
+                    if dlg.exec() != MapMetadataDialog.DialogCode.Accepted:
+                        return
+                    metadata = dlg.get_metadata()
+                    metadata.image_path_absolute = os.path.abspath(file_path)
+                    metadata.image_path = os.path.basename(file_path)
+                    image_path = metadata.image_path_absolute
+
+            image_data = MapLoader.load_image(image_path, metadata)
+            bounds = MapLoader.compute_bounds(metadata)
+            scale = MapLoader.compute_scale(metadata)
+            self._apply_occupancy_grid(image_data, metadata, bounds, scale)
+
+        except (FileNotFoundError, ValueError) as e:
+            QMessageBox.critical(self, "Error", f"Failed to load occupancy grid:\n{e}")
+
+    def _apply_occupancy_grid(self, image_data, metadata, bounds, scale):
+        """Apply loaded occupancy grid data to the scene and 3D viewer.
+
+        Args:
+            image_data: Grayscale numpy array (H, W), uint8.
+            metadata: MapMetadata instance.
+            bounds: (min_x, min_y, max_x, max_y) world bounds.
+            scale: Pixels per meter.
+        """
+        config = ConfigManager.instance()
+
+        # Cache state
+        self._map_metadata = metadata
+        self._map_image_data = image_data
+
+        # Clear scene and undo stack
+        self.canvas_2d.background_item = None
+        self.undo_stack.clear()
+        self.canvas_2d.scene.clear()
+        self.canvas_2d._scene_initialized = False
+
+        # Set coordinate system to ROS
+        cs = CoordinateSystem.ros()
+        self.coord_sys_widget.set_coordinate_system(cs)
+        self._apply_coordinate_system(cs)
+
+        # 2D background
+        self.canvas_2d.update_background(image_data, bounds, scale)
+        self.annotation_sync.set_world_bounds(bounds)
+
+        # 3D block mesh
+        block_height = config.get_ui_value("occupancy_grid", "block_height")
+        mesh = MapMeshGenerator.generate_mesh(image_data, metadata, block_height)
+        self.viewer_3d.set_geometry(mesh)
+
+        # Disable Z slider (slicing not meaningful for occupancy grid)
+        self.z_slider.setEnabled(False)
+        self.z_label.setText("Z: N/A (occupancy grid)")
+
+        # Disable annotation sync (no point cloud annotation geometry needed)
+        self.annotation_sync.set_enabled(False)
+
+        # Show Original 3D Data checkbox remains functional
+        self.geometry_visible_checkbox.setEnabled(True)
+        self.geometry_visible_checkbox.setChecked(True)
+
+        # Update Map Info section
+        self._update_map_info(metadata, block_height)
+
+    def _restore_occupancy_grid(self, metadata, project_path):
+        """Restore occupancy grid from saved project metadata.
+
+        Resolves image path: relative → absolute → user selection fallback.
+
+        Args:
+            metadata: MapMetadata from project file.
+            project_path: Path to the project JSON file.
+        """
+        config = ConfigManager.instance()
+        project_dir = os.path.dirname(os.path.abspath(project_path))
+
+        # Try relative path first, then absolute, then ask user
+        image_path = None
+        rel_candidate = os.path.normpath(os.path.join(project_dir, metadata.image_path))
+        if metadata.image_path and os.path.exists(rel_candidate):
+            image_path = rel_candidate
+        elif metadata.image_path_absolute and os.path.exists(metadata.image_path_absolute):
+            image_path = metadata.image_path_absolute
+        else:
+            image_path, _ = QFileDialog.getOpenFileName(
+                self, "Locate Map Image",
+                project_dir,
+                "Image Files (*.pgm *.png);;All Files (*)"
+            )
+            if not image_path:
+                print("Map image not found — skipping occupancy grid restoration")
+                self._set_3d_controls_for_point_cloud()
+                return
+
+        try:
+            metadata.image_path_absolute = os.path.abspath(image_path)
+            image_data = MapLoader.load_image(image_path, metadata)
+            bounds = MapLoader.compute_bounds(metadata)
+            scale = MapLoader.compute_scale(metadata)
+
+            # Cache state
+            self._map_metadata = metadata
+            self._map_image_data = image_data
+
+            # Set coordinate system to ROS
+            cs = CoordinateSystem.ros()
+            self.coord_sys_widget.set_coordinate_system(cs)
+            self._apply_coordinate_system(cs)
+
+            # 2D background
+            self.canvas_2d.update_background(image_data, bounds, scale)
+            self.annotation_sync.set_world_bounds(bounds)
+
+            # 3D block mesh
+            block_height = config.get_ui_value("occupancy_grid", "block_height")
+            mesh = MapMeshGenerator.generate_mesh(image_data, metadata, block_height)
+            self.viewer_3d.set_geometry(mesh)
+
+            # Disable Z slider
+            self.z_slider.setEnabled(False)
+            self.z_label.setText("Z: N/A (occupancy grid)")
+
+            # Disable annotation sync
+            self.annotation_sync.set_enabled(False)
+
+            # Show Original 3D Data checkbox remains functional
+            self.geometry_visible_checkbox.setEnabled(True)
+            self.geometry_visible_checkbox.setChecked(True)
+
+            # Update Map Info
+            self._update_map_info(metadata, block_height)
+
+        except (FileNotFoundError, ValueError) as e:
+            QMessageBox.warning(self, "Warning", f"Failed to restore occupancy grid:\n{e}")
+            self._set_3d_controls_for_point_cloud()
+
+    def _set_3d_controls_for_point_cloud(self):
+        """Re-enable 3D controls for point cloud mode."""
+        self.z_slider.setEnabled(True)
+        self.annotation_sync.set_enabled(True)
+        self._map_metadata = None
+        self._map_image_data = None
+        self._map_info_section.setVisible(False)
+
+    def _update_map_info(self, metadata, block_height):
+        """Update Map Info section labels."""
+        fname = os.path.basename(metadata.image_path_absolute) if metadata.image_path_absolute else metadata.image_path
+        w, h = metadata.image_width, metadata.image_height
+        res = metadata.resolution
+        self._map_info_file_label.setText(f"File: {fname}")
+        self._map_info_resolution_label.setText(f"Resolution: {res} m/px")
+        self._map_info_origin_label.setText(f"Origin: ({metadata.origin_x}, {metadata.origin_y})")
+        self._map_info_size_label.setText(f"Size: {w}\u00d7{h} px ({w * res:.1f}\u00d7{h * res:.1f} m)")
+        self._map_info_block_height_label.setText(f"Block Height: {block_height} m")
+        self._map_info_section.setVisible(True)
 
     def on_geometry_visibility_changed(self, state):
         """

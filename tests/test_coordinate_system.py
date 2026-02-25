@@ -202,10 +202,10 @@ class TestProjectDataCoordinateSystem(unittest.TestCase):
         proj = ProjectData.from_dict(d)
         self.assertEqual(proj.coordinate_system, CoordinateSystem.ros())
 
-    def test_version_is_2_0(self):
+    def test_version_is_3_0(self):
         from src.model.data import ProjectData
         proj = ProjectData()
-        self.assertEqual(proj.version, "2.0")
+        self.assertEqual(proj.version, "3.0")
 
 
 class TestSliceEngineCoordinateSystem(unittest.TestCase):

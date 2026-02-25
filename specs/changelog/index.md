@@ -1,5 +1,6 @@
 # Changelog Index
 
+- 2026-02-25 [Added] Occupancy Grid Map loading and annotation support: ROS2 map_server format, 2D background, 3D block mesh, Map Info section, project save/load v3.0 (FEAT-003, REQ-021) ([detail](2026-02-25-occupancy-grid-map-support.md))
 - 2026-02-25 [Added] Snap & Alignment Guide System with annotation precision convenience features (FEAT-002, REQ-020) ([detail](2026-02-25-snap-alignment-guide-system.md))
 - 2026-02-25 [Changed] Removed auto-detect floor feature; floor level is now set manually via spinbox only (REQ-022)
 - 2026-02-25 [Added] Coordinate system configuration support: ROS, OpenCV, OpenGL presets with custom option, manual floor level control, annotations stored in original coordinate system (FEAT-001, REQ-022)
