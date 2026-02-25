@@ -21,6 +21,11 @@ class Tool:
             self._config = ConfigManager.instance()
         return self._config
 
+    @property
+    def snap_manager(self):
+        """Get the SnapGuideManager from the canvas."""
+        return self.canvas.snap_manager
+
     def on_mouse_press(self, context: InputContext): pass
     def on_mouse_move(self, context: InputContext): pass
     def on_mouse_release(self, context: InputContext): pass

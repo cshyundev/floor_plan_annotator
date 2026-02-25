@@ -1,5 +1,6 @@
 # Changelog Index
 
+- 2026-02-25 [Added] Snap & Alignment Guide System with annotation precision convenience features (FEAT-002, REQ-020) ([detail](2026-02-25-snap-alignment-guide-system.md))
 - 2026-02-25 [Changed] Removed auto-detect floor feature; floor level is now set manually via spinbox only (REQ-022)
 - 2026-02-25 [Added] Coordinate system configuration support: ROS, OpenCV, OpenGL presets with custom option, manual floor level control, annotations stored in original coordinate system (FEAT-001, REQ-022)
 - 2026-02-25 [Fixed] Auto-reactivate "Show Original 3D Data" checkbox when slice height changes (BUG-003, REQ-017)

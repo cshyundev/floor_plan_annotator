@@ -23,6 +23,15 @@ class MockCanvas:
         self._next_room_id = 0
         self._next_custom_polygon_id = 0
         self._next_object_id = 0
+        # Snap manager mock: pass-through by default
+        self.snap_manager = MagicMock()
+        self.snap_manager.snap_drawing_point = MagicMock(
+            side_effect=lambda pos, **kw: pos
+        )
+        self.snap_manager.snap_drag_point = MagicMock(
+            side_effect=lambda pos, **kw: pos
+        )
+        self.snap_manager.clear_guides = MagicMock()
 
     def transform(self):
         return MagicMock()

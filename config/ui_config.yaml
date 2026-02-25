@@ -26,6 +26,9 @@ wall:
     width: 0.04         # Meters - wall line width in scene coordinates (4cm)
   selected:
     width: 0.06         # Meters - selected wall line width (6cm)
+  hover:
+    width: 0.05         # Meters - hover wall line width (5cm)
+    angle_threshold: 5.0 # Degrees - H/V detection threshold
   z_value: 50           # Rendering layer order
 
 room:
@@ -70,6 +73,15 @@ window:
 
 coordinate_system:
   default_preset: "ros"           # Default preset: "ros", "opencv", "opengl", "custom"
+
+snap:
+  enabled: true                   # Master toggle for snapping (Shift key toggles temporarily)
+  angle_threshold: 5.0            # Degrees — angle must be within this to trigger snap
+  alignment_tolerance: 5          # Pixels — screen-space distance to trigger alignment snap
+  angle_set: [0, 90, 180, 270]   # Global snap angles in degrees (H/V)
+  relative_snap: true             # Enable snapping parallel/perpendicular to existing edges
+  relative_offsets: [0, 90]       # Relative angle offsets (0=parallel, 90=perpendicular)
+  guide_z_value: 200              # Rendering layer for guide lines (above all annotations)
 
 annotation_3d:
   wall_height: 1.5              # Meters - virtual wall height for 3D visualization

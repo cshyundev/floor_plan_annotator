@@ -222,6 +222,14 @@ class PolygonItem(QGraphicsPathItem):
             for i, node in enumerate(self.nodes):
                 orig_pos = self._initial_node_positions[i]
                 node.setPos(orig_pos + delta)
+            # Show alignment guides for centroid position during drag
+            if self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    views[0].snap_manager.snap_drag_point(
+                        event.scenePos(),
+                        exclude_items=list(self.nodes) + [self],
+                    )
             event.accept()
         else:
             super().mouseMoveEvent(event)
@@ -232,6 +240,11 @@ class PolygonItem(QGraphicsPathItem):
             return
 
         if self._dragging or self._rotating:
+            # Clear snap guides
+            if self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    views[0].snap_manager.clear_guides()
             new_positions = [QPointF(n.pos()) for n in self.nodes]
             changed = any(
                 new_positions[i] != self._initial_node_positions[i]

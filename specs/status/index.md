@@ -21,6 +21,17 @@
 - Annotations stored in original data coordinate system
 - Coordinate system metadata in project files (v2.0)
 
+### Snap & Alignment Guide System (2026-02-25)
+- Global H/V angle snapping for all line-drawing tools
+- Relative parallel/perpendicular snapping against existing edges
+- Cross-object alignment guides (PPT-style) for drawing and dragging
+- Shift key toggle for snap on/off
+- Configurable thresholds, angle sets, and guide colors
+- EdgeItem hover: H/V status display with color feedback
+- EdgeItem context menu: Align to Horizontal/Vertical
+- NodeItem context menu: Make Perpendicular (Thales circle)
+- First-click alignment snap for wall tool
+
 ### Development Infrastructure (2026-02-15)
 - Python package structure with pyproject.toml
 - UV-based dependency management
@@ -38,13 +49,12 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| IMP-002 | 슬라이싱 성능 최적화 | SliceEngine | - | REQ-003 | 포인트 수가 많을 때 버벅임 발생. 데이터 처리 효율화 필요 |
+| *(없음)* | | | | | |
 
 ### Feature
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| FEAT-002 | 2D Canvas에서 선분에 대해 수직, 수평에 대한 힌트와 보정 | 2D Canvas / Drawing Tools | - | REQ-020 | |
 | FEAT-003 | Occupancy Grid에 대한 Annotation 기능 지원 | 2D Canvas / Annotation | - | REQ-021 | Draft — 상세 스펙 추후 정의 |
 
 ## In Progress

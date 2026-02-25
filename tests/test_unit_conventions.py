@@ -47,6 +47,8 @@ SRC_ALL_FILES = SRC_GUI_FILES + [
     "src/gui/event_coordinator.py",
     "src/gui/main_window.py",
     "src/gui/viewer_3d_stub.py",
+    "src/gui/snap/snap_engine.py",
+    "src/gui/snap/snap_guide_manager.py",
     "src/core/annotation_sync.py",
 ]
 

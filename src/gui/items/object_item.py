@@ -330,12 +330,24 @@ class ObjectItem(QGraphicsPolygonItem):
             delta = scene_pos - self._drag_start_pos
             self.center = self._drag_start_center + delta
             self.update_shape()
+            # Show alignment guides during body drag
+            if self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    views[0].snap_manager.snap_drag_point(
+                        self.center, exclude_items=[self],
+                    )
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self._rotating or self._resizing or self._drag_start_pos is not None:
+            # Clear snap guides
+            if self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    views[0].snap_manager.clear_guides()
             # Push undo command if state changed
             changed = (
                 self.center != self._initial_center or

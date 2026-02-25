@@ -5,6 +5,7 @@ from src.gui.tool_manager import ToolManager
 from src.gui.clipboard_manager import ClipboardManager
 from src.gui.data_serializer import DataSerializer
 from src.gui.event_coordinator import EventCoordinator
+from src.gui.snap import SnapGuideManager
 from src.core.config import ConfigManager
 from src.core.input_context import InputContext
 
@@ -32,6 +33,9 @@ class Canvas2D(QGraphicsView):
         self._next_room_id = 0
         self._next_custom_polygon_id = 0
         self._next_object_id = 0
+
+        # Snap Guide Manager (must be created before ToolManager)
+        self.snap_manager = SnapGuideManager(self.scene, self)
 
         # Tool Manager
         self.tool_manager = ToolManager(self)

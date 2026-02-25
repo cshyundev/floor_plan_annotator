@@ -62,7 +62,10 @@ class DrawObjectTool(Tool):
         if self._passthrough:
             return
         if self._state == self.DRAWING and self._preview_item is not None:
-            rect = QRectF(self._press_pos, context.scene_pos).normalized()
+            snapped = self.snap_manager.snap_drag_point(
+                context.scene_pos, modifiers=context.modifiers,
+            )
+            rect = QRectF(self._press_pos, snapped).normalized()
             self._preview_item.setRect(rect)
 
     def on_mouse_release(self, context: InputContext):
@@ -72,7 +75,8 @@ class DrawObjectTool(Tool):
         if self._state != self.DRAWING:
             return
 
-        # Remove preview
+        # Remove preview and guides
+        self.snap_manager.clear_guides()
         if self._preview_item is not None:
             self.scene.removeItem(self._preview_item)
             self._preview_item = None
@@ -131,6 +135,7 @@ class DrawObjectTool(Tool):
         return None
 
     def cleanup(self):
+        self.snap_manager.clear_guides()
         if self._preview_item is not None:
             if self._preview_item.scene() == self.scene:
                 self.scene.removeItem(self._preview_item)

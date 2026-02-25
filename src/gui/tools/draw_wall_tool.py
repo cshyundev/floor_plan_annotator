@@ -23,14 +23,23 @@ class DrawWallTool(Tool):
             if not self.current_start_node:
                 self._handle_first_click(pos, clicked_node)
             else:
-                self._handle_second_click(pos, clicked_node)
+                self._handle_second_click(pos, clicked_node, context.modifiers)
+
+    def on_mouse_move(self, context: InputContext):
+        if self.current_start_node:
+            self.snap_manager.snap_drawing_point(
+                context.scene_pos,
+                anchor_pos=self.current_start_node.pos(),
+                modifiers=context.modifiers,
+            )
 
     def _handle_first_click(self, pos, clicked_node):
         """Handle first click: start wall drawing."""
         if clicked_node:
             self.current_start_node = clicked_node
         else:
-            self.current_start_node = NodeItem(pos.x(), pos.y())
+            snapped = self.snap_manager.snap_drawing_point(pos)
+            self.current_start_node = NodeItem(snapped.x(), snapped.y())
             cmd = AddItemCommand(
                 self.scene,
                 [self.current_start_node],
@@ -39,13 +48,18 @@ class DrawWallTool(Tool):
             self.canvas.push_command(cmd)
         self.canvas.status_message.emit(self.config.get_string("tools", "wall", "started"))
 
-    def _handle_second_click(self, pos, clicked_node):
+    def _handle_second_click(self, pos, clicked_node, modifiers=None):
         """Handle second click: complete wall segment and prepare for next."""
         end_node = clicked_node
         new_items = []
 
         if not end_node:
-            end_node = NodeItem(pos.x(), pos.y())
+            snapped = self.snap_manager.snap_drawing_point(
+                pos,
+                anchor_pos=self.current_start_node.pos(),
+                modifiers=modifiers,
+            )
+            end_node = NodeItem(snapped.x(), snapped.y())
             new_items.append(end_node)
 
         if end_node != self.current_start_node:
@@ -61,9 +75,11 @@ class DrawWallTool(Tool):
                 self.canvas.push_command(cmd)
                 self.canvas.status_message.emit(self.config.get_string("tools", "wall", "segment_added"))
 
+        self.snap_manager.clear_guides()
         self.current_start_node = end_node
 
     def on_mouse_release(self, context: InputContext):
         if context.buttons == Qt.MouseButton.RightButton:
              self.current_start_node = None
+             self.snap_manager.clear_guides()
              self.canvas.status_message.emit(self.config.get_string("tools", "wall", "finished"))

@@ -80,6 +80,9 @@ class ToolManager:
             tool.cleanup()
         elif hasattr(tool, 'current_start_node'):
             tool.current_start_node = None
+        # Always clear snap guides when switching tools
+        if hasattr(self.canvas, 'snap_manager'):
+            self.canvas.snap_manager.clear_guides()
 
     def _activate_tool(self, name: str) -> None:
         """Activate a registered tool by name."""

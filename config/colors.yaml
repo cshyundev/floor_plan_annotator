@@ -16,6 +16,9 @@ wall:
     color: [112, 136, 160]      # #7088A0 — muted blue-gray
   selected:
     color: [255, 107, 107]      # #FF6B6B — soft red selection
+  hover:
+    hv_color: [96, 220, 128]    # #60DC80 — green (horizontal/vertical)
+    other_color: [255, 171, 64] # #FFAB40 — amber (non-aligned)
 
 room:
   brush: [79, 195, 247, 60]     # #4FC3F7 @ 24% — accent blue, very transparent
@@ -67,6 +70,12 @@ fallback:
   object:
     fill: [79, 195, 247, 60]          # accent blue, transparent
     border: [109, 208, 250]           # accent-hover blue
+
+# Snap guide lines
+snap:
+  orthogonal_color: [255, 170, 0, 180]    # #FFAA00 — amber, semi-transparent (global H/V guides)
+  relative_color: [0, 255, 170, 180]      # #00FFAA — teal, semi-transparent (parallel/perpendicular guides)
+  alignment_color: [0, 200, 255, 150]     # #00C8FF — cyan, semi-transparent (alignment guides)
 
 # Tool preview (non-interactive drag previews)
 tool_preview:

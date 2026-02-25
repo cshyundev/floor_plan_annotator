@@ -46,6 +46,16 @@ class DrawPolygonTool(Tool):
     def on_mouse_move(self, context: InputContext):
         if self._passthrough:
             return
+
+        # Show snap guide preview while drawing
+        if self.current_nodes:
+            anchor = self.current_nodes[-1].pos()
+            self.snap_manager.snap_drawing_point(
+                context.scene_pos,
+                anchor_pos=anchor,
+                modifiers=context.modifiers,
+            )
+
         if self._press_pos is None:
             return
         DRAG_THRESHOLD = 5
@@ -73,6 +83,7 @@ class DrawPolygonTool(Tool):
                 return
 
         if self._should_close_polygon(pos):
+            self.snap_manager.clear_guides()
             self._finish_polygon()
             return
 
@@ -106,7 +117,9 @@ class DrawPolygonTool(Tool):
 
     def _add_node(self, pos):
         """Add a new node to the current polygon."""
-        node = NodeItem(pos.x(), pos.y())
+        anchor = self.current_nodes[-1].pos() if self.current_nodes else None
+        snapped = self.snap_manager.snap_drawing_point(pos, anchor_pos=anchor)
+        node = NodeItem(snapped.x(), snapped.y())
         self.scene.addItem(node)
         self.current_nodes.append(node)
 
@@ -155,6 +168,7 @@ class DrawPolygonTool(Tool):
         self.temp_edges = []
 
     def cleanup(self):
+        self.snap_manager.clear_guides()
         self._remove_temp_edges()
         for n in self.current_nodes:
             if n.scene() == self.scene:

@@ -1,5 +1,7 @@
+import math
+
 from PyQt6.QtWidgets import QGraphicsItem, QGraphicsEllipseItem, QGraphicsLineItem
-from PyQt6.QtCore import Qt, QLineF
+from PyQt6.QtCore import Qt, QLineF, QPointF
 from PyQt6.QtGui import QPen, QBrush
 
 from src.core.config import ConfigManager
@@ -49,6 +51,11 @@ class NodeItem(QGraphicsEllipseItem):
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         if event.button() == Qt.MouseButton.LeftButton and self._drag_start_pos is not None:
+            # Clear snap guides
+            if self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    views[0].snap_manager.clear_guides()
             new_pos = self.pos()
             if new_pos != self._drag_start_pos:
                 views = self.scene().views()
@@ -75,7 +82,85 @@ class NodeItem(QGraphicsEllipseItem):
                 edge.update_line()
             for poly in self.polygons:
                 poly.update_shape()
+            # Show alignment guides during drag
+            if self._drag_start_pos is not None and self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    views[0].snap_manager.snap_drag_point(value, exclude_items=[self])
         return super().itemChange(change, value)
+
+    def _get_neighbor_node(self, edge):
+        """Return the node on the other end of the edge."""
+        return edge.end_node if edge.start_node is self else edge.start_node
+
+    def _compute_perpendicular_position(self):
+        """Compute new position for this node so two edges meet at 90 degrees.
+
+        Uses Thales' theorem: any point on a circle with diameter AB
+        sees segment AB at exactly 90 degrees. Projects the current
+        position onto that circle (closest point).
+
+        Returns:
+            New QPointF for this node, or None if not applicable.
+        """
+        if len(self.edges) != 2:
+            return None
+
+        a = self._get_neighbor_node(self.edges[0]).pos()
+        b = self._get_neighbor_node(self.edges[1]).pos()
+        mid = QPointF((a.x() + b.x()) / 2, (a.y() + b.y()) / 2)
+        radius = math.hypot(b.x() - a.x(), b.y() - a.y()) / 2
+
+        dx = self.pos().x() - mid.x()
+        dy = self.pos().y() - mid.y()
+        dist = math.hypot(dx, dy)
+
+        if dist < 1e-12:
+            # Node is at midpoint of AB — pick perpendicular direction
+            ab_x = b.x() - a.x()
+            ab_y = b.y() - a.y()
+            dx, dy = -ab_y, ab_x
+            dist = math.hypot(dx, dy)
+
+        return QPointF(
+            mid.x() + dx / dist * radius,
+            mid.y() + dy / dist * radius,
+        )
+
+    def make_perpendicular(self):
+        """Move this node so connected edges meet at exactly 90 degrees."""
+        new_pos = self._compute_perpendicular_position()
+        if new_pos is None:
+            return
+
+        if self.scene():
+            views = self.scene().views()
+            if views and hasattr(views[0], 'push_command'):
+                from src.core.undo_commands import MoveNodeCommand
+                cmd = MoveNodeCommand(self, self.pos(), new_pos)
+                views[0].push_command(cmd)
+                if hasattr(views[0], 'status_message'):
+                    views[0].status_message.emit("Node moved to make 90\u00b0 angle.")
+
+    def contextMenuEvent(self, event):
+        if len(self.edges) != 2:
+            return super().contextMenuEvent(event)
+
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu()
+        action = menu.addAction("Make Perpendicular")
+
+        # Disable if already perpendicular (dot product ≈ 0)
+        a = self._get_neighbor_node(self.edges[0]).pos()
+        b = self._get_neighbor_node(self.edges[1]).pos()
+        c = self.pos()
+        dot = (a.x() - c.x()) * (b.x() - c.x()) + (a.y() - c.y()) * (b.y() - c.y())
+        if abs(dot) < 1e-9:
+            action.setEnabled(False)
+
+        action.triggered.connect(self.make_perpendicular)
+        menu.exec(event.screenPos())
+        event.accept()
 
     def add_edge(self, edge):
         if edge not in self.edges:
@@ -112,14 +197,119 @@ class EdgeItem(QGraphicsLineItem):
         selected_color = config.get_color("wall", "selected", "color")
         selected_width = config.get_ui_value("wall", "selected", "width")
 
+        hover_width = config.get_ui_value("wall", "hover", "width")
+        hv_color = config.get_color("wall", "hover", "hv_color")
+        other_color = config.get_color("wall", "hover", "other_color")
+
         self.pen_default = QPen(default_color, default_width)
         self.pen_selected = QPen(selected_color, selected_width)
+        self.pen_hover_hv = QPen(hv_color, hover_width)
+        self.pen_hover_other = QPen(other_color, hover_width)
         self.setPen(self.pen_default)
         self.setZValue(config.get_ui_value("wall", "z_value"))
 
+        self._hv_threshold = config.get_ui_value("wall", "hover", "angle_threshold")
+
+        self.setAcceptHoverEvents(True)
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
 
         self.update_line()
+
+    def _compute_hv_status(self):
+        """Compute whether this edge is horizontal or vertical.
+
+        Returns:
+            (is_hv, deviation_deg, label) where deviation_deg is the
+            angular distance from the nearest H/V axis.
+        """
+        dx = self.end_node.pos().x() - self.start_node.pos().x()
+        dy = self.end_node.pos().y() - self.start_node.pos().y()
+        # Map to [0, 90] — only care about angle from horizontal
+        angle = math.degrees(math.atan2(abs(dy), abs(dx)))
+        if angle <= self._hv_threshold:
+            return True, angle, "Horizontal"
+        elif angle >= 90 - self._hv_threshold:
+            return True, 90 - angle, "Vertical"
+        else:
+            return False, min(angle, 90 - angle), None
+
+    def hoverEnterEvent(self, event):
+        is_hv, deviation, label = self._compute_hv_status()
+        self.setPen(self.pen_hover_hv if is_hv else self.pen_hover_other)
+        if self.scene():
+            views = self.scene().views()
+            if views and hasattr(views[0], 'status_message'):
+                if label:
+                    msg = f"Wall: {label} ({deviation:.1f}\u00b0 off)"
+                else:
+                    msg = f"Wall: {deviation:.1f}\u00b0 from nearest H/V"
+                views[0].status_message.emit(msg)
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        if self.isSelected():
+            self.setPen(self.pen_selected)
+        else:
+            self.setPen(self.pen_default)
+        super().hoverLeaveEvent(event)
+
+    def _compute_aligned_positions(self, direction):
+        """Compute node positions that align this edge to H or V.
+
+        Args:
+            direction: "horizontal" or "vertical"
+
+        Returns:
+            (new_start_pos, new_end_pos) as QPointF pair.
+        """
+        start = self.start_node.pos()
+        end = self.end_node.pos()
+        if direction == "horizontal":
+            avg_y = (start.y() + end.y()) / 2
+            return QPointF(start.x(), avg_y), QPointF(end.x(), avg_y)
+        else:
+            avg_x = (start.x() + end.x()) / 2
+            return QPointF(avg_x, start.y()), QPointF(avg_x, end.y())
+
+    def align_to(self, direction):
+        """Align this edge to horizontal or vertical via undo command."""
+        old_positions = [self.start_node.pos(), self.end_node.pos()]
+        new_start, new_end = self._compute_aligned_positions(direction)
+        new_positions = [new_start, new_end]
+
+        if self.scene():
+            views = self.scene().views()
+            if views and hasattr(views[0], 'push_command'):
+                from src.core.undo_commands import MoveNodesCommand
+                cmd = MoveNodesCommand(
+                    [self.start_node, self.end_node],
+                    old_positions, new_positions,
+                )
+                views[0].push_command(cmd)
+                if hasattr(views[0], 'status_message'):
+                    views[0].status_message.emit(
+                        f"Wall aligned to {direction}."
+                    )
+
+    def contextMenuEvent(self, event):
+        from PyQt6.QtWidgets import QMenu
+
+        menu = QMenu()
+        h_action = menu.addAction("Align Horizontal")
+        v_action = menu.addAction("Align Vertical")
+
+        # Disable only if alignment would not change positions
+        start, end = self.start_node.pos(), self.end_node.pos()
+        if start.y() == end.y():
+            h_action.setEnabled(False)
+        if start.x() == end.x():
+            v_action.setEnabled(False)
+
+        h_action.triggered.connect(lambda: self.align_to("horizontal"))
+        v_action.triggered.connect(lambda: self.align_to("vertical"))
+
+        menu.exec(event.screenPos())
+        event.accept()
 
     def update_line(self):
         line = QLineF(self.start_node.pos(), self.end_node.pos())
@@ -128,6 +318,6 @@ class EdgeItem(QGraphicsLineItem):
     def paint(self, painter, option, widget):
         if self.isSelected():
             self.setPen(self.pen_selected)
-        else:
+        elif not self.isUnderMouse():
             self.setPen(self.pen_default)
         super().paint(painter, option, widget)
