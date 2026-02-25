@@ -2,6 +2,9 @@ import numpy as np
 import open3d as o3d
 from scipy import ndimage
 
+from src.core.coordinate_system import CoordinateSystem
+
+
 class SliceEngine:
     def __init__(self):
         self._geometry = None        # Store original (PointCloud or TriangleMesh)
@@ -9,11 +12,33 @@ class SliceEngine:
         self._points = None
         self._colors = None
         self._bounds = None
-        self._bounds_2d = None       # Fixed 2D footprint (min_x, min_y, max_x, max_y)
+        self._bounds_2d = None       # Fixed 2D footprint (min_h, min_v, max_h, max_v)
+        self._coord_sys: CoordinateSystem = CoordinateSystem.ros()
 
         # Mesh-specific
         self._mesh = None
         self._vertices = None
+
+    def set_coordinate_system(self, cs: CoordinateSystem):
+        """Update coordinate system. Recomputes 2D bounds if data is loaded."""
+        self._coord_sys = cs
+        if self._points is not None:
+            self._recompute_bounds_2d()
+
+    def get_coordinate_system(self) -> CoordinateSystem:
+        return self._coord_sys
+
+    def _recompute_bounds_2d(self):
+        """Recompute the fixed 2D footprint from current points and coordinate system."""
+        if self._points is None or len(self._points) == 0:
+            self._bounds_2d = None
+            return
+        fh = self._coord_sys.floor_column_h()
+        fv = self._coord_sys.floor_column_v()
+        self._bounds_2d = (
+            float(self._points[:, fh].min()), float(self._points[:, fv].min()),
+            float(self._points[:, fh].max()), float(self._points[:, fv].max()),
+        )
 
     def load_data(self, geometry):
         """Loads Open3D PointCloud or TriangleMesh data.
@@ -46,10 +71,7 @@ class SliceEngine:
         else:
             self._colors = np.zeros_like(self._points)
         self._bounds = (self._points.min(axis=0), self._points.max(axis=0))
-        self._bounds_2d = (
-            float(self._points[:, 0].min()), float(self._points[:, 1].min()),
-            float(self._points[:, 0].max()), float(self._points[:, 1].max()),
-        )
+        self._recompute_bounds_2d()
 
     def _load_mesh(self, mesh):
         """Load triangle mesh data.
@@ -78,15 +100,13 @@ class SliceEngine:
             self._colors = np.ones_like(self._vertices) * 0.7
 
         self._bounds = (self._vertices.min(axis=0), self._vertices.max(axis=0))
-        self._bounds_2d = (
-            float(self._vertices[:, 0].min()), float(self._vertices[:, 1].min()),
-            float(self._vertices[:, 0].max()), float(self._vertices[:, 1].max()),
-        )
+        self._recompute_bounds_2d()
 
     def get_z_range(self):
         if self._bounds is None:
             return 0.0, 1.0
-        return self._bounds[0][2], self._bounds[1][2]
+        ua = self._coord_sys.height_column()
+        return self._bounds[0][ua], self._bounds[1][ua]
 
     def get_bounds_2d(self):
         """Return fixed 2D footprint bounds (min_x, min_y, max_x, max_y) from full geometry."""
@@ -111,8 +131,9 @@ class SliceEngine:
             
         z_min = z_height - (thickness / 2.0)
         z_max = z_height + (thickness / 2.0)
-        
-        mask = (self._points[:, 2] >= z_min) & (self._points[:, 2] <= z_max)
+
+        ua = self._coord_sys.height_column()
+        mask = (self._points[:, ua] >= z_min) & (self._points[:, ua] <= z_max)
         return self._points[mask], self._colors[mask]
 
     def project_to_image(self, points, pixel_size=0.01, padding=10, fixed_bounds=None):
@@ -122,23 +143,26 @@ class SliceEngine:
             points: Nx3 array
             pixel_size: Size of one pixel in meters (e.g., 0.01 = 1cm/pixel)
             padding: Padding in pixels around the image
-            fixed_bounds: Optional (min_x, min_y, max_x, max_y) to use instead of
+            fixed_bounds: Optional (min_h, min_v, max_h, max_v) to use instead of
                           calculating from current points. Keeps image size constant.
         Returns:
             image: 2D numpy array (grayscale image)
-            bounds: (min_x, min_y, max_x, max_y) in world coordinates
+            bounds: (min_h, min_v, max_h, max_v) in world coordinates
             scale: pixels per meter
         """
+        fh = self._coord_sys.floor_column_h()
+        fv = self._coord_sys.floor_column_v()
+
         if fixed_bounds is not None:
-            min_x, min_y, max_x, max_y = fixed_bounds
+            min_h, min_v, max_h, max_v = fixed_bounds
         elif len(points) == 0:
             return None, (0, 0, 0, 0), 1.0 / pixel_size
         else:
-            min_x, max_x = points[:, 0].min(), points[:, 0].max()
-            min_y, max_y = points[:, 1].min(), points[:, 1].max()
+            min_h, max_h = points[:, fh].min(), points[:, fh].max()
+            min_v, max_v = points[:, fv].min(), points[:, fv].max()
 
-        width_m = max_x - min_x
-        height_m = max_y - min_y
+        width_m = max_h - min_h
+        height_m = max_v - min_v
 
         scale = 1.0 / pixel_size
         w = int(np.ceil(width_m * scale)) + 2 * padding
@@ -147,11 +171,14 @@ class SliceEngine:
         img = np.zeros((h, w), dtype=np.uint8)
 
         if len(points) > 0:
-            x = points[:, 0]
-            y = points[:, 1]
+            x = points[:, fh]
+            y = points[:, fv]
 
-            ix = ((x - min_x) * scale + padding).astype(int)
-            iy = (h - 1) - ((y - min_y) * scale + padding).astype(int)
+            ix = ((x - min_h) * scale + padding).astype(int)
+            if self._coord_sys.flip_floor_v:
+                iy = (h - 1) - ((y - min_v) * scale + padding).astype(int)
+            else:
+                iy = ((y - min_v) * scale + padding).astype(int)
 
             ix = np.clip(ix, 0, w - 1)
             iy = np.clip(iy, 0, h - 1)
@@ -159,4 +186,20 @@ class SliceEngine:
             img[iy, ix] = 255
             img = ndimage.binary_dilation(img, iterations=1).astype(np.uint8) * 255
 
-        return img, (min_x, min_y, max_x, max_y), scale
+        return img, (min_h, min_v, max_h, max_v), scale
+
+    def detect_floor_level(self, percentile: float = 5.0) -> float:
+        """Auto-detect floor level from point cloud height distribution.
+
+        Args:
+            percentile: Lower percentile of height values to use as floor estimate.
+
+        Returns:
+            Estimated floor level along the up axis.
+        """
+        if self._points is None:
+            return 0.0
+        heights = self._points[:, self._coord_sys.height_column()]
+        if self._coord_sys.up_direction == -1:
+            return float(np.percentile(heights, 100.0 - percentile))
+        return float(np.percentile(heights, percentile))

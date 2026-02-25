@@ -1,6 +1,7 @@
 """Tests for CoordinateSystem core module."""
 
 import unittest
+import numpy as np
 from src.core.coordinate_system import CoordinateSystem
 
 
@@ -170,6 +171,106 @@ class TestCameraUpVector(unittest.TestCase):
             cam_up = cs.camera_up_vector()
             dot = np.dot(view_dir, cam_up)
             self.assertAlmostEqual(dot, 0.0, msg=f"camera_up not perpendicular for {name}")
+
+
+class TestSliceEngineCoordinateSystem(unittest.TestCase):
+    """Test SliceEngine with different coordinate systems."""
+
+    def _make_point_cloud(self, points):
+        import open3d as o3d
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(np.array(points, dtype=np.float64))
+        pcd.colors = o3d.utility.Vector3dVector(np.ones((len(points), 3)) * 0.5)
+        return pcd
+
+    def setUp(self):
+        from src.core.processor import SliceEngine
+        self.engine = SliceEngine()
+        # Points: 4 points at different positions
+        # [x, y, z]
+        self.points = [
+            [1.0, 2.0, 0.5],
+            [3.0, 4.0, 1.0],
+            [5.0, 6.0, 1.5],
+            [7.0, 8.0, 2.0],
+        ]
+        self.pcd = self._make_point_cloud(self.points)
+
+    def test_ros_z_range(self):
+        self.engine.load_data(self.pcd)  # default ROS
+        z_min, z_max = self.engine.get_z_range()
+        self.assertAlmostEqual(z_min, 0.5)
+        self.assertAlmostEqual(z_max, 2.0)
+
+    def test_opencv_z_range_uses_y_axis(self):
+        self.engine.set_coordinate_system(CoordinateSystem.opencv())
+        self.engine.load_data(self.pcd)
+        z_min, z_max = self.engine.get_z_range()
+        # OpenCV up_axis=1 (Y), so height range is Y: 2.0 to 8.0
+        self.assertAlmostEqual(z_min, 2.0)
+        self.assertAlmostEqual(z_max, 8.0)
+
+    def test_ros_slice_at_height(self):
+        self.engine.load_data(self.pcd)
+        pts, _ = self.engine.slice_at_height(1.0, thickness=0.2)
+        # Should get point at z=1.0 (within 0.9-1.1)
+        self.assertEqual(len(pts), 1)
+        np.testing.assert_array_almost_equal(pts[0], [3.0, 4.0, 1.0])
+
+    def test_opencv_slice_at_height(self):
+        self.engine.set_coordinate_system(CoordinateSystem.opencv())
+        self.engine.load_data(self.pcd)
+        # OpenCV slices on Y axis. Point [1,2,0.5] has Y=2.0
+        pts, _ = self.engine.slice_at_height(2.0, thickness=0.2)
+        self.assertEqual(len(pts), 1)
+        np.testing.assert_array_almost_equal(pts[0], [1.0, 2.0, 0.5])
+
+    def test_bounds_2d_ros(self):
+        self.engine.load_data(self.pcd)
+        bounds = self.engine.get_bounds_2d()
+        # ROS floor_axes=(0,1) → X and Y
+        self.assertAlmostEqual(bounds[0], 1.0)  # min_h (X)
+        self.assertAlmostEqual(bounds[1], 2.0)  # min_v (Y)
+        self.assertAlmostEqual(bounds[2], 7.0)  # max_h (X)
+        self.assertAlmostEqual(bounds[3], 8.0)  # max_v (Y)
+
+    def test_bounds_2d_opencv(self):
+        self.engine.set_coordinate_system(CoordinateSystem.opencv())
+        self.engine.load_data(self.pcd)
+        bounds = self.engine.get_bounds_2d()
+        # OpenCV floor_axes=(0,2) → X and Z
+        self.assertAlmostEqual(bounds[0], 1.0)  # min_h (X)
+        self.assertAlmostEqual(bounds[1], 0.5)  # min_v (Z)
+        self.assertAlmostEqual(bounds[2], 7.0)  # max_h (X)
+        self.assertAlmostEqual(bounds[3], 2.0)  # max_v (Z)
+
+    def test_set_coordinate_system_recomputes_bounds(self):
+        self.engine.load_data(self.pcd)
+        bounds_ros = self.engine.get_bounds_2d()
+        self.engine.set_coordinate_system(CoordinateSystem.opencv())
+        bounds_opencv = self.engine.get_bounds_2d()
+        # Bounds should differ because floor axes changed
+        self.assertNotEqual(bounds_ros, bounds_opencv)
+
+    def test_detect_floor_level_ros(self):
+        self.engine.load_data(self.pcd)
+        floor = self.engine.detect_floor_level(percentile=5.0)
+        # Lowest Z is 0.5, percentile should be near it
+        self.assertLessEqual(floor, 0.6)
+
+    def test_detect_floor_level_opencv(self):
+        self.engine.set_coordinate_system(CoordinateSystem.opencv())
+        self.engine.load_data(self.pcd)
+        floor = self.engine.detect_floor_level(percentile=5.0)
+        # OpenCV: up_direction=-1, uses 100-percentile → near max Y=8.0
+        self.assertGreaterEqual(floor, 7.5)
+
+    def test_project_to_image_returns_bounds(self):
+        self.engine.load_data(self.pcd)
+        pts, _ = self.engine.slice_at_height(1.0, thickness=2.0)
+        _, bounds, _ = self.engine.project_to_image(pts, pixel_size=0.1)
+        # Bounds should be (min_h, min_v, max_h, max_v) on floor axes
+        self.assertEqual(len(bounds), 4)
 
 
 if __name__ == "__main__":
