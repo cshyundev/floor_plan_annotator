@@ -23,3 +23,4 @@
 - [REQ-019: Annotation Interaction Rules](REQ-019.md) — Implemented
 - [REQ-020: Line Orthogonal Snapping](REQ-020.md) — Proposed
 - [REQ-021: Occupancy Grid Annotation](REQ-021.md) — Proposed (Draft)
+- [REQ-022: Coordinate System Configuration](REQ-022.md) — Implemented
