@@ -68,9 +68,14 @@ window:
   splitter_left: 550  # Pixels - left panel initial width (3D viewer)
   splitter_right: 550 # Pixels - right panel initial width (2D canvas)
 
+coordinate_system:
+  default_preset: "ros"           # Default preset: "ros", "opencv", "opengl", "custom"
+  auto_detect_floor: false        # Auto-detect floor level from point cloud
+  auto_detect_percentile: 5       # Percentile of height values for floor estimation
+
 annotation_3d:
   wall_height: 1.5              # Meters - virtual wall height for 3D visualization
-  floor_z_level: 0.0            # Z level for room floor planes
+  floor_z_level: 0.0            # Z level for room floor planes (legacy, superseded by coordinate_system.floor_level)
   enable_room_planes: true      # Toggle room polygon planes in 3D viewer
   enable_wall_geometry: true    # Toggle virtual wall planes in 3D viewer
   enable_custom_polygon_planes: true  # Toggle custom polygon planes in 3D viewer
