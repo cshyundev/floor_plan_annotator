@@ -43,12 +43,6 @@ Current development status, including completed features and ongoing work.
 ### [Changelog](changelog/index.md)
 Version history and release notes (to be maintained).
 
-### [Technical Specification](technical-specification.md)
-Detailed system architecture, component design, data flow, and implementation details.
-
-### [API Reference](api-reference.md)
-Complete API documentation for all core modules, data models, GUI components, and file formats.
-
 ### [Coding Standards](coding-standards.md)
 Python coding standards, style guide, and quality requirements for the project.
 
