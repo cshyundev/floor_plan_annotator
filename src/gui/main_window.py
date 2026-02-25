@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QSplitter, QFileDialog, QSlider, QLabel, QDockWidget,
-                             QToolBar, QStatusBar, QCheckBox, QPushButton, QScrollArea,
-                             QMessageBox)
+                             QToolBar, QStatusBar, QCheckBox, QComboBox, QPushButton,
+                             QScrollArea, QMessageBox)
 from PyQt6.QtGui import QAction, QActionGroup, QUndoStack
 from PyQt6.QtCore import Qt
 from src.gui.canvas_2d import Canvas2D
@@ -72,6 +72,9 @@ class MainWindow(QMainWindow):
         # Occupancy grid state
         self._map_metadata = None  # type: MapMetadata | None
         self._map_image_data = None  # type: np.ndarray | None
+
+        # All-points projection cache (invalidated on data load / coord sys change)
+        self._all_points_cache = None  # (img, bounds, scale) or None
 
         # Controls (Dock)
         self.create_controls()
@@ -259,6 +262,12 @@ class MainWindow(QMainWindow):
         self.z_label = QLabel(config.get_string("labels", "z_value").format(0.0))
         view_layout.addWidget(self.z_label)
 
+        view_layout.addWidget(QLabel("Projection"))
+        self.projection_mode_combo = QComboBox()
+        self.projection_mode_combo.addItems(["Slice", "All Points"])
+        self.projection_mode_combo.currentIndexChanged.connect(self._on_projection_mode_changed)
+        view_layout.addWidget(self.projection_mode_combo)
+
         self.geometry_visible_checkbox = QCheckBox("Show Original 3D Data")
         self.geometry_visible_checkbox.setChecked(True)
         self.geometry_visible_checkbox.stateChanged.connect(self.on_geometry_visibility_changed)
@@ -417,6 +426,7 @@ class MainWindow(QMainWindow):
         self.viewer_3d.load_geometry(file_path)
         if self.viewer_3d.geometry:
             self.processor.load_data(self.viewer_3d.geometry)
+            self._all_points_cache = None
             self.canvas_2d._scene_initialized = False
 
             # Initialize annotation sync system
@@ -452,11 +462,28 @@ class MainWindow(QMainWindow):
 
     def _update_2d_slice(self):
         """Update 2D slice visualization (fast path, always runs)."""
-        points, colors = self.processor.slice_at_height(self.current_z, thickness=0.1)
         bounds_2d = self.processor.get_bounds_2d()
-        img, bounds, scale = self.processor.project_to_image(points, pixel_size=0.02, fixed_bounds=bounds_2d)
+
+        if self.projection_mode_combo.currentIndex() == 1:  # All Points
+            if self._all_points_cache is None:
+                points, colors = self.processor.get_all_points()
+                img, bounds, scale = self.processor.project_to_image(
+                    points, pixel_size=0.02, fixed_bounds=bounds_2d, colors=colors
+                )
+                self._all_points_cache = (img, bounds, scale)
+            img, bounds, scale = self._all_points_cache
+        else:  # Slice
+            points, colors = self.processor.slice_at_height(self.current_z, thickness=0.1)
+            img, bounds, scale = self.processor.project_to_image(
+                points, pixel_size=0.02, fixed_bounds=bounds_2d, colors=colors
+            )
+
         self.canvas_2d.update_background(img, bounds, scale)
         self.annotation_sync.set_world_bounds(bounds)
+
+    def _on_projection_mode_changed(self, index):
+        """Handle projection mode combo change."""
+        self._update_2d_slice()
 
     def _update_3d_final(self):
         """Full-resolution 3D update (called after slider stops)."""
@@ -512,6 +539,7 @@ class MainWindow(QMainWindow):
         self.processor.set_coordinate_system(cs)
         self.viewer_3d.set_coordinate_system(cs)
         self.annotation_sync.set_coordinate_system(cs)
+        self._all_points_cache = None
 
     def load_occupancy_grid(self):
         """Load a ROS2 occupancy grid map (YAML or image)."""
@@ -637,6 +665,7 @@ class MainWindow(QMainWindow):
 
         # UI state
         self.z_slider.setEnabled(False)
+        self.projection_mode_combo.setEnabled(False)
         self.z_label.setText("Z: N/A (occupancy grid)")
         self.geometry_visible_checkbox.setEnabled(True)
         self.geometry_visible_checkbox.setChecked(True)
@@ -645,6 +674,7 @@ class MainWindow(QMainWindow):
     def _set_3d_controls_for_point_cloud(self):
         """Re-enable 3D controls for point cloud mode."""
         self.z_slider.setEnabled(True)
+        self.projection_mode_combo.setEnabled(True)
         self.annotation_sync.set_enabled(True)
         self._map_metadata = None
         self._map_image_data = None

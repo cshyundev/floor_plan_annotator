@@ -69,7 +69,7 @@ class SliceEngine:
         if pcd.has_colors():
             self._colors = np.asarray(pcd.colors)
         else:
-            self._colors = np.zeros_like(self._points)
+            self._colors = np.ones_like(self._points)
         self._bounds = (self._points.min(axis=0), self._points.max(axis=0))
         self._recompute_bounds_2d()
 
@@ -112,6 +112,17 @@ class SliceEngine:
         """Return fixed 2D footprint bounds (min_x, min_y, max_x, max_y) from full geometry."""
         return self._bounds_2d
 
+    def get_all_points(self):
+        """Return all loaded points and colors.
+
+        Returns:
+            points: Nx3 numpy array of all points
+            colors: Nx3 numpy array of all colors
+        """
+        if self._points is None:
+            return np.array([]), np.array([])
+        return self._points, self._colors
+
     def slice_at_height(self, z_height, thickness=0.1):
         """Slices geometry at z_height with thickness band.
 
@@ -136,17 +147,24 @@ class SliceEngine:
         mask = (self._points[:, ua] >= z_min) & (self._points[:, ua] <= z_max)
         return self._points[mask], self._colors[mask]
 
-    def project_to_image(self, points, pixel_size=0.01, padding=10, fixed_bounds=None):
+    def project_to_image(self, points, pixel_size=0.01, padding=10, fixed_bounds=None, colors=None):
         """
-        Projects 3D points to a 2D density map / image.
+        Projects 3D points to a 2D image.
+
+        When colors are provided, produces an RGB image where each pixel uses
+        the color of the topmost point at that location. When colors are None,
+        produces a grayscale density map (existing behavior).
+
         Args:
             points: Nx3 array
             pixel_size: Size of one pixel in meters (e.g., 0.01 = 1cm/pixel)
             padding: Padding in pixels around the image
             fixed_bounds: Optional (min_h, min_v, max_h, max_v) to use instead of
                           calculating from current points. Keeps image size constant.
+            colors: Optional Nx3 array of colors in [0, 1] range (Open3D format).
+                    When provided, returns an RGB image (h, w, 3).
         Returns:
-            image: 2D numpy array (grayscale image)
+            image: numpy array — (h, w) grayscale or (h, w, 3) RGB
             bounds: (min_h, min_v, max_h, max_v) in world coordinates
             scale: pixels per meter
         """
@@ -168,8 +186,18 @@ class SliceEngine:
         w = int(np.ceil(width_m * scale)) + 2 * padding
         h = int(np.ceil(height_m * scale)) + 2 * padding
 
-        img = np.zeros((h, w), dtype=np.uint8)
+        if colors is not None and len(colors) > 0:
+            img = self._project_color(points, colors, h, w, fh, fv,
+                                      min_h, min_v, scale, padding)
+        else:
+            img = self._project_grayscale(points, h, w, fh, fv,
+                                          min_h, min_v, scale, padding)
 
+        return img, (min_h, min_v, max_h, max_v), scale
+
+    def _project_grayscale(self, points, h, w, fh, fv, min_h, min_v, scale, padding):
+        """Existing grayscale density projection."""
+        img = np.zeros((h, w), dtype=np.uint8)
         if len(points) > 0:
             x = points[:, fh]
             y = points[:, fv]
@@ -185,5 +213,49 @@ class SliceEngine:
 
             img[iy, ix] = 255
             img = ndimage.binary_dilation(img, iterations=1).astype(np.uint8) * 255
+        return img
 
-        return img, (min_h, min_v, max_h, max_v), scale
+    def _project_color(self, points, colors, h, w, fh, fv, min_h, min_v, scale, padding):
+        """Color projection using topmost point's color per pixel."""
+        color_img = np.zeros((h, w, 3), dtype=np.uint8)
+
+        if len(points) == 0:
+            return color_img
+
+        x = points[:, fh]
+        y = points[:, fv]
+
+        ix = ((x - min_h) * scale + padding).astype(int)
+        if self._coord_sys.flip_floor_v:
+            iy = (h - 1) - ((y - min_v) * scale + padding).astype(int)
+        else:
+            iy = ((y - min_v) * scale + padding).astype(int)
+
+        ix = np.clip(ix, 0, w - 1)
+        iy = np.clip(iy, 0, h - 1)
+
+        # Sort by effective height ascending so last-write-wins = topmost
+        height_col = self._coord_sys.height_column()
+        up_dir = self._coord_sys.up_direction
+        z_effective = points[:, height_col] * up_dir
+
+        sort_order = np.argsort(z_effective)
+        sorted_ix = ix[sort_order]
+        sorted_iy = iy[sort_order]
+        sorted_colors = (np.clip(colors[sort_order], 0, 1) * 255).astype(np.uint8)
+
+        color_img[sorted_iy, sorted_ix] = sorted_colors
+        mask = np.zeros((h, w), dtype=bool)
+        mask[sorted_iy, sorted_ix] = True
+
+        # Color-aware dilation: propagate nearest source color to dilated pixels
+        dilated_mask = ndimage.binary_dilation(mask, iterations=1)
+        new_pixels = dilated_mask & ~mask
+        if np.any(new_pixels):
+            _, nearest_idx = ndimage.distance_transform_edt(~mask, return_indices=True)
+            color_img[new_pixels] = color_img[
+                nearest_idx[0][new_pixels],
+                nearest_idx[1][new_pixels]
+            ]
+
+        return color_img

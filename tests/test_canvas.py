@@ -241,5 +241,89 @@ class TestCanvas2D(unittest.TestCase):
         self.assertFalse(rect.isSelected())
 
 
+class TestUpdateBackgroundFormats(unittest.TestCase):
+    """Test IMP-001: Canvas2D.update_background accepts both grayscale and RGB arrays."""
+
+    def setUp(self):
+        self.canvas = Canvas2D()
+        self.canvas.set_undo_stack(MagicMock())
+
+    def test_update_background_rgb(self):
+        """Pass (100, 100, 3) uint8 RGB array, verify background_item is created."""
+        width, height = 100, 100
+        rgb_data = np.zeros((height, width, 3), dtype=np.uint8)
+        # Set some color so it is not all black
+        rgb_data[:, :, 0] = 200  # red channel
+
+        origin = (0, 0, 10, 10)
+        scale = 10.0
+
+        self.canvas.update_background(rgb_data, origin, scale)
+
+        self.assertIsNotNone(self.canvas.background_item)
+        items = self.canvas.scene.items()
+        self.assertTrue(
+            any(isinstance(i, type(self.canvas.background_item)) for i in items),
+            "Background pixmap item should be in the scene"
+        )
+
+        # Verify the stored data is RGB (3D array)
+        self.assertEqual(self.canvas._background_data.ndim, 3)
+        self.assertEqual(self.canvas._background_data.shape[2], 3)
+
+    def test_update_background_grayscale_still_works(self):
+        """Pass (100, 100) uint8 grayscale array, verify backward compat still works."""
+        width, height = 100, 100
+        gray_data = np.zeros((height, width), dtype=np.uint8)
+        gray_data[50, 50] = 255  # single white pixel
+
+        origin = (0, 0, 10, 10)
+        scale = 10.0
+
+        self.canvas.update_background(gray_data, origin, scale)
+
+        self.assertIsNotNone(self.canvas.background_item)
+        items = self.canvas.scene.items()
+        self.assertTrue(
+            any(isinstance(i, type(self.canvas.background_item)) for i in items),
+            "Background pixmap item should be in the scene"
+        )
+
+        # Verify the stored data is grayscale (2D array)
+        self.assertEqual(self.canvas._background_data.ndim, 2)
+
+    def test_update_background_rgb_then_grayscale(self):
+        """Switching from RGB to grayscale background should replace cleanly."""
+        width, height = 80, 80
+        origin = (0, 0, 8, 8)
+        scale = 10.0
+
+        # First: RGB background
+        rgb_data = np.ones((height, width, 3), dtype=np.uint8) * 128
+        self.canvas.update_background(rgb_data, origin, scale)
+        first_item = self.canvas.background_item
+        self.assertIsNotNone(first_item)
+
+        # Second: grayscale background (should replace the RGB one)
+        gray_data = np.ones((height, width), dtype=np.uint8) * 64
+        self.canvas.update_background(gray_data, origin, scale)
+        second_item = self.canvas.background_item
+
+        self.assertIsNotNone(second_item)
+        # The old item should have been removed and replaced
+        self.assertIsNot(first_item, second_item)
+        # Stored data should now be 2D grayscale
+        self.assertEqual(self.canvas._background_data.ndim, 2)
+
+    def test_update_background_none_does_nothing(self):
+        """Passing None image_data should be a no-op."""
+        origin = (0, 0, 10, 10)
+        scale = 10.0
+
+        self.canvas.update_background(None, origin, scale)
+
+        self.assertIsNone(self.canvas.background_item)
+
+
 if __name__ == "__main__":
     unittest.main()

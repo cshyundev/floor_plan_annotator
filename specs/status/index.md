@@ -41,6 +41,12 @@
 - Project save/load with map metadata (v3.0 format, backward compatible)
 - Annotation tools work on occupancy grid without modification
 
+### 2D Slice Color Projection (IMP-001) (2026-02-25)
+- Color-aware 2D projection using topmost point color per pixel (REQ-023)
+- Coordinate-system-aware height sorting (works with ROS, OpenCV, OpenGL)
+- Nearest-neighbor color dilation for wall thickness
+- Occupancy grid mode unaffected (uses separate grayscale path)
+
 ### Development Infrastructure (2026-02-15)
 - Python package structure with pyproject.toml
 - UV-based dependency management
@@ -58,7 +64,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| IMP-001 | 2D slice 표시 시 색상 반영 | 3D → 2D Projection | - | - | 각 픽셀에 속하는 가장 상위(ROS: z가 가장 큰) 포인트의 색상으로 표시 |
+| *(없음)* | | | | | |
 
 ### Feature
 

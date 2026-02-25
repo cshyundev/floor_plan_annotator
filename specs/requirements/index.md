@@ -24,3 +24,4 @@
 - [REQ-020: Line Orthogonal Snapping](REQ-020.md) — Proposed
 - [REQ-021: Occupancy Grid Annotation](REQ-021.md) — Accepted
 - [REQ-022: Coordinate System Configuration](REQ-022.md) — Implemented
+- [REQ-023: 2D Slice Color Projection](REQ-023.md) — Implemented

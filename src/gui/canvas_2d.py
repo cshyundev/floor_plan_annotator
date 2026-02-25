@@ -146,7 +146,7 @@ class Canvas2D(QGraphicsView):
         Updates the background image.
 
         Args:
-            image_data: numpy array (grayscale)
+            image_data: numpy array — (H, W) grayscale or (H, W, 3) RGB
             origin: (min_x, min_y, max_x, max_y) in world coords (meters)
             scale: pixels per meter
 
@@ -166,17 +166,28 @@ class Canvas2D(QGraphicsView):
 
         # Create QImage from numpy array
         # Use the copied data to prevent segfault when original is garbage collected
-        height, width = self._background_data.shape
-        bytes_per_line = width
-
-        # Create QImage from copied data
-        q_image = QImage(
-            self._background_data.data,
-            width,
-            height,
-            bytes_per_line,
-            QImage.Format.Format_Grayscale8
-        )
+        if self._background_data.ndim == 3 and self._background_data.shape[2] == 3:
+            # RGB color image
+            height, width, _ = self._background_data.shape
+            bytes_per_line = width * 3
+            q_image = QImage(
+                self._background_data.data,
+                width,
+                height,
+                bytes_per_line,
+                QImage.Format.Format_RGB888
+            )
+        else:
+            # Grayscale image (occupancy grid, fallback)
+            height, width = self._background_data.shape
+            bytes_per_line = width
+            q_image = QImage(
+                self._background_data.data,
+                width,
+                height,
+                bytes_per_line,
+                QImage.Format.Format_Grayscale8
+            )
         # Make another copy to ensure QImage owns its data
         q_image = q_image.copy()
         pixmap = QPixmap.fromImage(q_image)
