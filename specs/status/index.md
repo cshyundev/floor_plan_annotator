@@ -47,6 +47,11 @@
 - Nearest-neighbor color dilation for wall thickness
 - Occupancy grid mode unaffected (uses separate grayscale path)
 
+### Shared Nodes Between Annotations (FEAT-004) (2026-02-25)
+- Polygon drawing tools (room, custom polygon) reuse existing NodeItems on click (REQ-024)
+- Smart orphan detection on deletion preserves shared nodes
+- Boundary edge tagging for correct load/delete behavior
+
 ### Development Infrastructure (2026-02-15)
 - Python package structure with pyproject.toml
 - UV-based dependency management
@@ -70,7 +75,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| FEAT-004 | 서로 다른 annotation 간 점(node) 공유 | Annotation / Node | - | - | wall layout 후 room annotation 시 일부 점을 공유하면 annotation이 더 깔끔함 |
+| *(없음)* | | | | | |
 
 ## In Progress
 
