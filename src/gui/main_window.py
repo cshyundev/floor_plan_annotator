@@ -10,6 +10,8 @@ from src.core.processor import SliceEngine
 import numpy as np
 
 from src.core.config import ConfigManager
+from src.core.coordinate_system import CoordinateSystem
+from src.gui.coordinate_system_widget import CoordinateSystemWidget
 
 # Try to import Viewer3D - let it fail naturally if Open3D doesn't work
 # The Viewer3D class itself handles failures gracefully
@@ -125,7 +127,9 @@ class MainWindow(QMainWindow):
             from src.core.io import ProjectIO
             # 1. Get data from canvas
             project_data = self.canvas_2d.save_to_data()
-            # 2. Save
+            # 2. Attach coordinate system
+            project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
+            # 3. Save
             ProjectIO.save_project(project_data, file_path)
             print(f"Project saved to {file_path}")
 
@@ -135,7 +139,11 @@ class MainWindow(QMainWindow):
             from src.core.io import ProjectIO
             # 1. Load data
             project_data = ProjectIO.load_project(file_path)
-            # 2. Populate canvas
+            # 2. Restore coordinate system
+            cs = project_data.coordinate_system
+            self.coord_sys_widget.set_coordinate_system(cs)
+            self._apply_coordinate_system(cs)
+            # 3. Populate canvas
             self.canvas_2d.load_from_data(project_data)
             print(f"Project loaded from {file_path}")
 
@@ -168,7 +176,23 @@ class MainWindow(QMainWindow):
         props_section.set_content_layout(props_layout)
         main_layout.addWidget(props_section)
 
-        # Section 2: View Controls
+        # Section 2: Coordinate System
+        self.coord_sys_widget = CoordinateSystemWidget()
+        self.coord_sys_widget.coordinate_system_changed.connect(
+            self._on_coordinate_system_changed
+        )
+        self.coord_sys_widget.auto_detect_btn.clicked.connect(
+            self._on_auto_detect_floor
+        )
+
+        cs_section = CollapsibleSection("Coordinate System")
+        cs_layout = QVBoxLayout()
+        cs_layout.setContentsMargins(0, 0, 0, 0)
+        cs_layout.addWidget(self.coord_sys_widget)
+        cs_section.set_content_layout(cs_layout)
+        main_layout.addWidget(cs_section)
+
+        # Section 3: View Controls
         view_section = CollapsibleSection("View Controls")
         view_layout = QVBoxLayout()
         view_layout.setContentsMargins(8, 4, 8, 4)
@@ -344,6 +368,10 @@ class MainWindow(QMainWindow):
 
     def load_data(self, file_path):
         """Load 3D data from file."""
+        # Apply current coordinate system before loading
+        cs = self.coord_sys_widget.current_coordinate_system()
+        self._apply_coordinate_system(cs)
+
         self.viewer_3d.load_geometry(file_path)
         if self.viewer_3d.geometry:
             self.processor.load_data(self.viewer_3d.geometry)
@@ -351,6 +379,9 @@ class MainWindow(QMainWindow):
 
             # Initialize annotation sync system
             self.annotation_sync.initialize_geometry(self.viewer_3d.geometry)
+
+            # Enable auto-detect floor button
+            self.coord_sys_widget.auto_detect_btn.setEnabled(True)
 
             self.z_slider.setValue(50)
             self.on_slider_change(50)
@@ -428,6 +459,29 @@ class MainWindow(QMainWindow):
         from PyQt6.QtCore import Qt
         visible = (state == Qt.CheckState.Checked.value)
         self.annotation_sync.set_category_visibility(category, visible)
+
+    def _on_coordinate_system_changed(self, cs: CoordinateSystem):
+        """Handle coordinate system change from widget."""
+        self._apply_coordinate_system(cs)
+        # Re-render if data is loaded
+        if self.processor._points is not None:
+            self.on_slider_change(self.z_slider.value())
+            self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+
+    def _apply_coordinate_system(self, cs: CoordinateSystem):
+        """Push a coordinate system to processor, viewer, and annotation sync."""
+        self.processor.set_coordinate_system(cs)
+        self.viewer_3d.set_coordinate_system(cs)
+        self.annotation_sync.set_coordinate_system(cs)
+
+    def _on_auto_detect_floor(self):
+        """Auto-detect floor level from the loaded point cloud."""
+        if self.processor._points is None:
+            return
+        config = ConfigManager.instance()
+        percentile = config.get_ui_value("coordinate_system", "auto_detect_percentile")
+        floor_level = self.processor.detect_floor_level(percentile)
+        self.coord_sys_widget.floor_spin.setValue(round(floor_level, 3))
 
     def on_geometry_visibility_changed(self, state):
         """
