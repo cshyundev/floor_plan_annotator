@@ -570,64 +570,20 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load occupancy grid:\n{e}")
 
     def _apply_occupancy_grid(self, image_data, metadata, bounds, scale):
-        """Apply loaded occupancy grid data to the scene and 3D viewer.
-
-        Args:
-            image_data: Grayscale numpy array (H, W), uint8.
-            metadata: MapMetadata instance.
-            bounds: (min_x, min_y, max_x, max_y) world bounds.
-            scale: Pixels per meter.
-        """
-        config = ConfigManager.instance()
-
-        # Cache state
-        self._map_metadata = metadata
-        self._map_image_data = image_data
-
+        """Apply loaded occupancy grid data to the scene and 3D viewer."""
         # Clear scene and undo stack
         self.canvas_2d.background_item = None
         self.undo_stack.clear()
         self.canvas_2d.scene.clear()
         self.canvas_2d._scene_initialized = False
-
-        # Set coordinate system to ROS
-        cs = CoordinateSystem.ros()
-        self.coord_sys_widget.set_coordinate_system(cs)
-        self._apply_coordinate_system(cs)
-
-        # 2D background
-        self.canvas_2d.update_background(image_data, bounds, scale)
-        self.annotation_sync.set_world_bounds(bounds)
-
-        # 3D block mesh
-        block_height = config.get_ui_value("occupancy_grid", "block_height")
-        mesh = MapMeshGenerator.generate_mesh(image_data, metadata, block_height)
-        self.viewer_3d.set_geometry(mesh)
-
-        # Disable Z slider (slicing not meaningful for occupancy grid)
-        self.z_slider.setEnabled(False)
-        self.z_label.setText("Z: N/A (occupancy grid)")
-
-        # Disable annotation sync (no point cloud annotation geometry needed)
-        self.annotation_sync.set_enabled(False)
-
-        # Show Original 3D Data checkbox remains functional
-        self.geometry_visible_checkbox.setEnabled(True)
-        self.geometry_visible_checkbox.setChecked(True)
-
-        # Update Map Info section
-        self._update_map_info(metadata, block_height)
+        # Setup display
+        self._setup_occupancy_grid_display(image_data, metadata, bounds, scale)
 
     def _restore_occupancy_grid(self, metadata, project_path):
         """Restore occupancy grid from saved project metadata.
 
         Resolves image path: relative → absolute → user selection fallback.
-
-        Args:
-            metadata: MapMetadata from project file.
-            project_path: Path to the project JSON file.
         """
-        config = ConfigManager.instance()
         project_dir = os.path.dirname(os.path.abspath(project_path))
 
         # Try relative path first, then absolute, then ask user
@@ -653,42 +609,38 @@ class MainWindow(QMainWindow):
             image_data = MapLoader.load_image(image_path, metadata)
             bounds = MapLoader.compute_bounds(metadata)
             scale = MapLoader.compute_scale(metadata)
-
-            # Cache state
-            self._map_metadata = metadata
-            self._map_image_data = image_data
-
-            # Set coordinate system to ROS
-            cs = CoordinateSystem.ros()
-            self.coord_sys_widget.set_coordinate_system(cs)
-            self._apply_coordinate_system(cs)
-
-            # 2D background
-            self.canvas_2d.update_background(image_data, bounds, scale)
-            self.annotation_sync.set_world_bounds(bounds)
-
-            # 3D block mesh
-            block_height = config.get_ui_value("occupancy_grid", "block_height")
-            mesh = MapMeshGenerator.generate_mesh(image_data, metadata, block_height)
-            self.viewer_3d.set_geometry(mesh)
-
-            # Disable Z slider
-            self.z_slider.setEnabled(False)
-            self.z_label.setText("Z: N/A (occupancy grid)")
-
-            # Disable annotation sync
-            self.annotation_sync.set_enabled(False)
-
-            # Show Original 3D Data checkbox remains functional
-            self.geometry_visible_checkbox.setEnabled(True)
-            self.geometry_visible_checkbox.setChecked(True)
-
-            # Update Map Info
-            self._update_map_info(metadata, block_height)
-
+            self._setup_occupancy_grid_display(image_data, metadata, bounds, scale)
         except (FileNotFoundError, ValueError) as e:
             QMessageBox.warning(self, "Warning", f"Failed to restore occupancy grid:\n{e}")
             self._set_3d_controls_for_point_cloud()
+
+    def _setup_occupancy_grid_display(self, image_data, metadata, bounds, scale):
+        """Common setup for occupancy grid display (2D background + 3D mesh + UI)."""
+        config = ConfigManager.instance()
+
+        self._map_metadata = metadata
+        self._map_image_data = image_data
+
+        # Coordinate system → ROS
+        cs = CoordinateSystem.ros()
+        self.coord_sys_widget.set_coordinate_system(cs)
+        self._apply_coordinate_system(cs)
+
+        # 2D background
+        self.canvas_2d.update_background(image_data, bounds, scale)
+        self.annotation_sync.set_world_bounds(bounds)
+
+        # 3D block mesh
+        block_height = config.get_ui_value("occupancy_grid", "block_height")
+        mesh = MapMeshGenerator.generate_mesh(image_data, metadata, block_height)
+        self.viewer_3d.set_geometry(mesh)
+
+        # UI state
+        self.z_slider.setEnabled(False)
+        self.z_label.setText("Z: N/A (occupancy grid)")
+        self.geometry_visible_checkbox.setEnabled(True)
+        self.geometry_visible_checkbox.setChecked(True)
+        self._update_map_info(metadata, block_height)
 
     def _set_3d_controls_for_point_cloud(self):
         """Re-enable 3D controls for point cloud mode."""
