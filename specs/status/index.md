@@ -17,7 +17,7 @@
 
 ### Coordinate System Support (2026-02-25)
 - Multi-convention coordinate system support (ROS, OpenCV, OpenGL, Custom)
-- Floor level auto-detection from point cloud data
+- Manual floor level configuration via spinbox
 - Annotations stored in original data coordinate system
 - Coordinate system metadata in project files (v2.0)
 

@@ -70,8 +70,6 @@ window:
 
 coordinate_system:
   default_preset: "ros"           # Default preset: "ros", "opencv", "opengl", "custom"
-  auto_detect_floor: false        # Auto-detect floor level from point cloud
-  auto_detect_percentile: 5       # Percentile of height values for floor estimation
 
 annotation_3d:
   wall_height: 1.5              # Meters - virtual wall height for 3D visualization

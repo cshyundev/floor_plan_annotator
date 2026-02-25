@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QDoubleSpinBox,
-    QLabel, QPushButton, QFormLayout, QCheckBox, QGroupBox,
+    QLabel, QFormLayout, QCheckBox, QGroupBox,
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -94,11 +94,6 @@ class CoordinateSystemWidget(QWidget):
         self.floor_spin.valueChanged.connect(self._on_floor_changed)
         floor_layout.addRow("Floor Level:", self.floor_spin)
         layout.addLayout(floor_layout)
-
-        # Auto-detect button
-        self.auto_detect_btn = QPushButton("Auto-detect Floor")
-        self.auto_detect_btn.setEnabled(False)
-        layout.addWidget(self.auto_detect_btn)
 
         layout.addStretch()
 

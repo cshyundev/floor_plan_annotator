@@ -1,6 +1,7 @@
 # Changelog Index
 
-- 2026-02-25 [Added] Coordinate system configuration support: ROS, OpenCV, OpenGL presets with custom option, floor level auto-detection, annotations stored in original coordinate system (FEAT-001, REQ-022)
+- 2026-02-25 [Changed] Removed auto-detect floor feature; floor level is now set manually via spinbox only (REQ-022)
+- 2026-02-25 [Added] Coordinate system configuration support: ROS, OpenCV, OpenGL presets with custom option, manual floor level control, annotations stored in original coordinate system (FEAT-001, REQ-022)
 - 2026-02-25 [Fixed] Auto-reactivate "Show Original 3D Data" checkbox when slice height changes (BUG-003, REQ-017)
 - 2026-02-24 [Fixed] Type Editor list displays human-readable name instead of internal key, Add button shows input dialog, and new types get unique random colors (BUG-002, REQ-018)
 - 2026-02-24 [Changed] Updated REQ-017 with auto-reactivation behavior for "Show Original 3D Data" checkbox on slice height change (BUG-003)

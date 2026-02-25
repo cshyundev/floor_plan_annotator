@@ -181,9 +181,6 @@ class MainWindow(QMainWindow):
         self.coord_sys_widget.coordinate_system_changed.connect(
             self._on_coordinate_system_changed
         )
-        self.coord_sys_widget.auto_detect_btn.clicked.connect(
-            self._on_auto_detect_floor
-        )
 
         cs_section = CollapsibleSection("Coordinate System")
         cs_layout = QVBoxLayout()
@@ -380,9 +377,6 @@ class MainWindow(QMainWindow):
             # Initialize annotation sync system
             self.annotation_sync.initialize_geometry(self.viewer_3d.geometry)
 
-            # Enable auto-detect floor button
-            self.coord_sys_widget.auto_detect_btn.setEnabled(True)
-
             self.z_slider.setValue(50)
             self.on_slider_change(50)
 
@@ -473,15 +467,6 @@ class MainWindow(QMainWindow):
         self.processor.set_coordinate_system(cs)
         self.viewer_3d.set_coordinate_system(cs)
         self.annotation_sync.set_coordinate_system(cs)
-
-    def _on_auto_detect_floor(self):
-        """Auto-detect floor level from the loaded point cloud."""
-        if self.processor._points is None:
-            return
-        config = ConfigManager.instance()
-        percentile = config.get_ui_value("coordinate_system", "auto_detect_percentile")
-        floor_level = self.processor.detect_floor_level(percentile)
-        self.coord_sys_widget.floor_spin.setValue(round(floor_level, 3))
 
     def on_geometry_visibility_changed(self, state):
         """

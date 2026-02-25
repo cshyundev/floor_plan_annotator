@@ -287,19 +287,6 @@ class TestSliceEngineCoordinateSystem(unittest.TestCase):
         # Bounds should differ because floor axes changed
         self.assertNotEqual(bounds_ros, bounds_opencv)
 
-    def test_detect_floor_level_ros(self):
-        self.engine.load_data(self.pcd)
-        floor = self.engine.detect_floor_level(percentile=5.0)
-        # Lowest Z is 0.5, percentile should be near it
-        self.assertLessEqual(floor, 0.6)
-
-    def test_detect_floor_level_opencv(self):
-        self.engine.set_coordinate_system(CoordinateSystem.opencv())
-        self.engine.load_data(self.pcd)
-        floor = self.engine.detect_floor_level(percentile=5.0)
-        # OpenCV: up_direction=-1, uses 100-percentile → near max Y=8.0
-        self.assertGreaterEqual(floor, 7.5)
-
     def test_project_to_image_returns_bounds(self):
         self.engine.load_data(self.pcd)
         pts, _ = self.engine.slice_at_height(1.0, thickness=2.0)

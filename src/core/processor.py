@@ -187,19 +187,3 @@ class SliceEngine:
             img = ndimage.binary_dilation(img, iterations=1).astype(np.uint8) * 255
 
         return img, (min_h, min_v, max_h, max_v), scale
-
-    def detect_floor_level(self, percentile: float = 5.0) -> float:
-        """Auto-detect floor level from point cloud height distribution.
-
-        Args:
-            percentile: Lower percentile of height values to use as floor estimate.
-
-        Returns:
-            Estimated floor level along the up axis.
-        """
-        if self._points is None:
-            return 0.0
-        heights = self._points[:, self._coord_sys.height_column()]
-        if self._coord_sys.up_direction == -1:
-            return float(np.percentile(heights, 100.0 - percentile))
-        return float(np.percentile(heights, percentile))
