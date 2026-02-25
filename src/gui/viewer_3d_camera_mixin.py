@@ -18,12 +18,18 @@ class CameraMixin:
 
         # Right vector
         forward = (self.camera_center - self.camera_eye)
-        forward = forward / np.linalg.norm(forward)
+        fwd_norm = np.linalg.norm(forward)
+        if fwd_norm < 1e-6:
+            return
+        forward = forward / fwd_norm
         right = np.cross(forward, self.camera_up)
-        right = right / np.linalg.norm(right)
+        right_norm = np.linalg.norm(right)
+        if right_norm < 1e-6:
+            return  # Degenerate: forward parallel to camera_up
+        right = right / right_norm
 
-        # Rotate v around Y
-        R_y = self.rotation_matrix(np.array([0, 1, 0]), alpha)
+        # Rotate v around the up axis
+        R_y = self.rotation_matrix(self.camera_up, alpha)
         v = R_y @ v
 
         # Rotate v around Right
@@ -40,10 +46,15 @@ class CameraMixin:
 
         forward = (self.camera_center - self.camera_eye)
         dist = np.linalg.norm(forward)
+        if dist < 1e-6:
+            return
         forward = forward / dist
 
         right = np.cross(forward, self.camera_up)
-        right = right / np.linalg.norm(right)
+        right_norm = np.linalg.norm(right)
+        if right_norm < 1e-6:
+            return
+        right = right / right_norm
 
         up = np.cross(right, forward)
 
@@ -59,6 +70,8 @@ class CameraMixin:
         # Move eye towards center
         v = self.camera_center - self.camera_eye
         dist = np.linalg.norm(v)
+        if dist < 1e-6:
+            return
 
         zoom_speed = 0.1 * (dist if dist > 0.1 else 0.1)
 

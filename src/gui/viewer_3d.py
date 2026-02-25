@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, QTimer, QPoint
 
 from src.gui.viewer_3d_camera_mixin import CameraMixin
 from src.gui.viewer_3d_annotation_mixin import AnnotationMixin
+from src.core.coordinate_system import CoordinateSystem
 
 
 class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
@@ -18,6 +19,9 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         self._image_data = None  # Store numpy array to prevent garbage collection
         self._renderer_failed = False  # Track if renderer initialization failed
         self._shown_once = False  # Track if widget has been shown at least once
+
+        # Coordinate system (default ROS, updated via set_coordinate_system)
+        self._coord_sys: CoordinateSystem = CoordinateSystem.ros()
 
         # Scene Data
         self._axes_size = 1.0
@@ -49,6 +53,29 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
             print(f"Warning: Failed to create material: {e}")
             self.material = None
             self._renderer_failed = True
+
+    def set_coordinate_system(self, coord_sys: CoordinateSystem):
+        """Update coordinate system. Resets camera and grid if geometry is loaded."""
+        self._coord_sys = coord_sys
+        if hasattr(self, 'original_geometry') and self.original_geometry:
+            self._reset_camera_for_coord_sys()
+            self._add_grid_to_scene()
+            self.render_scene()
+
+    def _reset_camera_for_coord_sys(self):
+        """Reset camera to a top-down position based on the current coordinate system."""
+        bbox = self.original_geometry.get_axis_aligned_bounding_box()
+        cs = self._coord_sys
+        self.camera_center = bbox.get_center()
+        extent = bbox.get_max_bound() - bbox.get_min_bound()
+        max_extent = max(extent)
+        # Position eye along the up axis, looking down
+        eye_offset = np.zeros(3)
+        eye_offset[cs.up_axis] = max_extent * 2.0 * cs.up_direction
+        self.camera_eye = self.camera_center + eye_offset
+        # Camera up = floor_v axis (perpendicular to view direction)
+        self.camera_up = np.array(cs.camera_up_vector())
+        self._axes_size = float(max_extent) * 0.2
 
     def _create_renderer(self, w, h):
         """Create or recreate the OffscreenRenderer with given dimensions.
@@ -182,14 +209,8 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
             import copy
             self.geometry = copy.deepcopy(self.original_geometry)
 
-            # Center camera (only on new load)
-            bbox = self.geometry.get_axis_aligned_bounding_box()
-            self.camera_center = bbox.get_center()
-            extent = bbox.get_max_bound() - bbox.get_min_bound()
-            max_extent = max(extent)
-            self.camera_eye = self.camera_center + np.array([0, 0, max_extent * 2.0])
-            self.camera_up = np.array([0, 1, 0])
-            self._axes_size = float(max_extent) * 0.2
+            # Center camera based on coordinate system (only on new load)
+            self._reset_camera_for_coord_sys()
 
             # Setup Plane placeholder
             self.plane_geometry = o3d.geometry.LineSet()
@@ -222,11 +243,13 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         min_b = bbox.get_min_bound()
         max_b = bbox.get_max_bound()
 
+        cs = self._coord_sys
+        fh, fv = cs.floor_column_h(), cs.floor_column_v()
         points = [
-            [min_b[0], min_b[1], z_height],
-            [max_b[0], min_b[1], z_height],
-            [max_b[0], max_b[1], z_height],
-            [min_b[0], max_b[1], z_height],
+            cs.make_3d_point(min_b[fh], min_b[fv], z_height),
+            cs.make_3d_point(max_b[fh], min_b[fv], z_height),
+            cs.make_3d_point(max_b[fh], max_b[fv], z_height),
+            cs.make_3d_point(min_b[fh], max_b[fv], z_height),
         ]
         lines = [[0, 1], [1, 2], [2, 3], [3, 0]]
         colors = [[1, 0, 0] for _ in range(len(lines))]
@@ -246,18 +269,26 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
 
         Args:
             source_geometry: Geometry to crop (original or downsampled)
-            z_height: Crop upper Z bound
+            z_height: Crop upper bound along the up axis
         """
         if not self.renderer:
             return
 
         bbox = self.original_geometry.get_axis_aligned_bounding_box()
-        min_b = bbox.get_min_bound()
-        max_b = bbox.get_max_bound()
+        min_b = list(bbox.get_min_bound())
+        max_b = list(bbox.get_max_bound())
+
+        ua = self._coord_sys.up_axis
+        if self._coord_sys.up_direction == 1:
+            min_b[ua] -= 100.0
+            max_b[ua] = z_height
+        else:
+            min_b[ua] = z_height
+            max_b[ua] += 100.0
 
         crop_box = o3d.geometry.AxisAlignedBoundingBox(
-            min_bound=[min_b[0], min_b[1], min_b[2] - 100.0],
-            max_bound=[max_b[0], max_b[1], z_height],
+            min_bound=min_b,
+            max_bound=max_b,
         )
 
         new_geometry = source_geometry.crop(crop_box)
@@ -434,36 +465,39 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         return o3d.geometry.Image(gradient)
 
     def _add_grid_to_scene(self):
-        """Add XY ground plane grid at z=0 as a LineSet."""
+        """Add ground plane grid at floor_level on the floor axes as a LineSet."""
         if not self.renderer or self._renderer_failed:
             return
+
+        cs = self._coord_sys
+        fh, fv = cs.floor_column_h(), cs.floor_column_v()
 
         if hasattr(self, 'original_geometry') and self.original_geometry:
             bbox = self.original_geometry.get_axis_aligned_bounding_box()
             min_b = bbox.get_min_bound()
             max_b = bbox.get_max_bound()
-            extent = max(max_b[0] - min_b[0], max_b[1] - min_b[1])
+            extent = max(max_b[fh] - min_b[fh], max_b[fv] - min_b[fv])
         else:
-            min_b = np.array([-5.0, -5.0, 0.0])
-            max_b = np.array([5.0, 5.0, 0.0])
+            min_b = np.array([-5.0, -5.0, -5.0])
+            max_b = np.array([5.0, 5.0, 5.0])
             extent = 10.0
 
         spacing = self._grid_spacing(extent)
-        z = 0.0
+        floor_z = cs.floor_level
 
-        x0 = math.floor(min_b[0] / spacing) * spacing
-        x1 = math.ceil(max_b[0] / spacing) * spacing
-        y0 = math.floor(min_b[1] / spacing) * spacing
-        y1 = math.ceil(max_b[1] / spacing) * spacing
+        h0 = math.floor(min_b[fh] / spacing) * spacing
+        h1 = math.ceil(max_b[fh] / spacing) * spacing
+        v0 = math.floor(min_b[fv] / spacing) * spacing
+        v1 = math.ceil(max_b[fv] / spacing) * spacing
 
         points, lines = [], []
-        for x in np.arange(x0, x1 + spacing * 0.5, spacing):
+        for h in np.arange(h0, h1 + spacing * 0.5, spacing):
             i = len(points)
-            points += [[x, y0, z], [x, y1, z]]
+            points += [cs.make_3d_point(h, v0, floor_z), cs.make_3d_point(h, v1, floor_z)]
             lines.append([i, i + 1])
-        for y in np.arange(y0, y1 + spacing * 0.5, spacing):
+        for v in np.arange(v0, v1 + spacing * 0.5, spacing):
             i = len(points)
-            points += [[x0, y, z], [x1, y, z]]
+            points += [cs.make_3d_point(h0, v, floor_z), cs.make_3d_point(h1, v, floor_z)]
             lines.append([i, i + 1])
 
         if not points:
