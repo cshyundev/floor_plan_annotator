@@ -2,6 +2,8 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Tuple, Dict, Optional
 import uuid
 
+from src.core.coordinate_system import CoordinateSystem
+
 @dataclass
 class Point2D:
     x: float
@@ -127,11 +129,13 @@ class ProjectData:
     rooms: List[Room] = field(default_factory=list)
     objects: List[Object] = field(default_factory=list)
     custom_polygons: List[CustomPolygon] = field(default_factory=list)
-    version: str = "1.0"
+    coordinate_system: CoordinateSystem = field(default_factory=CoordinateSystem.ros)
+    version: str = "2.0"
 
     def to_dict(self):
         return {
             "version": self.version,
+            "coordinate_system": self.coordinate_system.to_dict(),
             "walls": [w.to_dict() for w in self.walls],
             "rooms": [r.to_dict() for r in self.rooms],
             "objects": [o.to_dict() for o in self.objects],
@@ -142,6 +146,10 @@ class ProjectData:
     def from_dict(d):
         proj = ProjectData()
         proj.version = d.get('version', "1.0")
+        if 'coordinate_system' in d:
+            proj.coordinate_system = CoordinateSystem.from_dict(d['coordinate_system'])
+        else:
+            proj.coordinate_system = CoordinateSystem.ros()
         proj.walls = [Wall.from_dict(w) for w in d.get('walls', [])]
         proj.rooms = [Room.from_dict(r) for r in d.get('rooms', [])]
         proj.objects = [Object.from_dict(o) for o in d.get('objects', [])]

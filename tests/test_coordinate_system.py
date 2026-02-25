@@ -173,6 +173,41 @@ class TestCameraUpVector(unittest.TestCase):
             self.assertAlmostEqual(dot, 0.0, msg=f"camera_up not perpendicular for {name}")
 
 
+class TestProjectDataCoordinateSystem(unittest.TestCase):
+    """Test ProjectData coordinate system serialization."""
+
+    def test_default_coordinate_system_is_ros(self):
+        from src.model.data import ProjectData
+        proj = ProjectData()
+        self.assertEqual(proj.coordinate_system, CoordinateSystem.ros())
+
+    def test_to_dict_includes_coordinate_system(self):
+        from src.model.data import ProjectData
+        proj = ProjectData()
+        d = proj.to_dict()
+        self.assertIn("coordinate_system", d)
+        self.assertEqual(d["coordinate_system"]["up_axis"], 2)
+
+    def test_round_trip_with_opencv(self):
+        from src.model.data import ProjectData
+        proj = ProjectData()
+        proj.coordinate_system = CoordinateSystem.opencv()
+        d = proj.to_dict()
+        proj2 = ProjectData.from_dict(d)
+        self.assertEqual(proj2.coordinate_system, CoordinateSystem.opencv())
+
+    def test_v1_project_defaults_to_ros(self):
+        from src.model.data import ProjectData
+        d = {"version": "1.0", "walls": [], "rooms": []}
+        proj = ProjectData.from_dict(d)
+        self.assertEqual(proj.coordinate_system, CoordinateSystem.ros())
+
+    def test_version_is_2_0(self):
+        from src.model.data import ProjectData
+        proj = ProjectData()
+        self.assertEqual(proj.version, "2.0")
+
+
 class TestSliceEngineCoordinateSystem(unittest.TestCase):
     """Test SliceEngine with different coordinate systems."""
 
