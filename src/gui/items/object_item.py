@@ -293,7 +293,14 @@ class ObjectItem(QGraphicsPolygonItem):
         if self._rotating:
             self.prepareGeometryChange()
             delta = scene_pos - self.center
-            self.angle = math.degrees(math.atan2(delta.y(), delta.x())) + 90
+            raw_angle = math.degrees(math.atan2(delta.y(), delta.x())) + 90
+            if self.scene():
+                views = self.scene().views()
+                if views and hasattr(views[0], 'snap_manager'):
+                    raw_angle = views[0].snap_manager.snap_rotation_angle(
+                        self.center, raw_angle, event.modifiers(),
+                    )
+            self.angle = raw_angle
             self.update_shape()
             event.accept()
 

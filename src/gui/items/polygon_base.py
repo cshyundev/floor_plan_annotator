@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPen, QBrush, QPainterPath
 
 from src.core.config import ConfigManager
+from src.gui.items.geometry_utils import compute_hv_status, compute_aligned_positions
 
 
 class PolygonItem(QGraphicsPathItem):
@@ -126,6 +127,24 @@ class PolygonItem(QGraphicsPathItem):
         if self.isSelected():
             self.rotation_handle.setVisible(True)
         super().hoverEnterEvent(event)
+
+    def hoverMoveEvent(self, event):
+        edge_pair = self._find_nearest_edge(event.scenePos())
+        if edge_pair is not None and self.scene():
+            idx_a, idx_b = edge_pair
+            a = self.nodes[idx_a].pos()
+            b = self.nodes[idx_b].pos()
+            config = ConfigManager.instance()
+            threshold = config.get_ui_value("wall", "hover", "angle_threshold")
+            is_hv, deviation, label = compute_hv_status(a, b, threshold)
+            views = self.scene().views()
+            if views and hasattr(views[0], 'status_message'):
+                if label:
+                    msg = f"Edge: {label} ({deviation:.1f}\u00b0 off)"
+                else:
+                    msg = f"Edge: {deviation:.1f}\u00b0 from nearest H/V"
+                views[0].status_message.emit(msg)
+        super().hoverMoveEvent(event)
 
     def hoverLeaveEvent(self, event):
         self.setBrush(QBrush(self._brush_color))
@@ -265,3 +284,98 @@ class PolygonItem(QGraphicsPathItem):
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+
+    # --- Edge alignment (IMP-002) ---
+
+    def _find_nearest_edge(self, scene_pos: QPointF) -> tuple[int, int] | None:
+        """Find the polygon edge nearest to *scene_pos*.
+
+        Returns (idx_a, idx_b) for the two node indices, or None if < 2 nodes.
+        """
+        if len(self.nodes) < 2:
+            return None
+
+        best_dist = float("inf")
+        best_pair = None
+
+        for i in range(len(self.nodes)):
+            j = (i + 1) % len(self.nodes)
+            a = self.nodes[i].pos()
+            b = self.nodes[j].pos()
+
+            dx = b.x() - a.x()
+            dy = b.y() - a.y()
+            seg_len_sq = dx * dx + dy * dy
+
+            if seg_len_sq < 1e-12:
+                dist = math.hypot(scene_pos.x() - a.x(), scene_pos.y() - a.y())
+            else:
+                t = max(0.0, min(1.0, (
+                    (scene_pos.x() - a.x()) * dx +
+                    (scene_pos.y() - a.y()) * dy
+                ) / seg_len_sq))
+                proj_x = a.x() + t * dx
+                proj_y = a.y() + t * dy
+                dist = math.hypot(scene_pos.x() - proj_x, scene_pos.y() - proj_y)
+
+            if dist < best_dist:
+                best_dist = dist
+                best_pair = (i, j)
+
+        return best_pair
+
+    def _compute_edge_aligned_positions(self, idx_a: int, idx_b: int, direction: str):
+        """Compute aligned positions for the edge between nodes[idx_a] and nodes[idx_b].
+
+        Returns (new_pos_a, new_pos_b) as QPointF pair.
+        """
+        return compute_aligned_positions(
+            self.nodes[idx_a].pos(), self.nodes[idx_b].pos(), direction,
+        )
+
+    def align_edge_to(self, idx_a: int, idx_b: int, direction: str):
+        """Align an edge to horizontal or vertical via undo command."""
+        node_a = self.nodes[idx_a]
+        node_b = self.nodes[idx_b]
+        old_positions = [QPointF(node_a.pos()), QPointF(node_b.pos())]
+        new_a, new_b = self._compute_edge_aligned_positions(idx_a, idx_b, direction)
+        new_positions = [new_a, new_b]
+
+        if self.scene():
+            views = self.scene().views()
+            if views and hasattr(views[0], 'push_command'):
+                from src.core.undo_commands import MoveNodesCommand
+                cmd = MoveNodesCommand(
+                    [node_a, node_b],
+                    old_positions, new_positions,
+                )
+                views[0].push_command(cmd)
+                if hasattr(views[0], 'status_message'):
+                    views[0].status_message.emit(
+                        f"Edge aligned to {direction}."
+                    )
+
+    def _build_alignment_menu(self, menu, scene_pos: QPointF):
+        """Add Align Horizontal / Align Vertical actions to *menu*.
+
+        Detects the nearest edge to *scene_pos* and wires up alignment.
+        """
+        edge_pair = self._find_nearest_edge(scene_pos)
+        if edge_pair is None:
+            return
+
+        idx_a, idx_b = edge_pair
+        a = self.nodes[idx_a].pos()
+        b = self.nodes[idx_b].pos()
+
+        menu.addSeparator()
+        h_action = menu.addAction("Align Horizontal")
+        v_action = menu.addAction("Align Vertical")
+
+        if a.y() == b.y():
+            h_action.setEnabled(False)
+        if a.x() == b.x():
+            v_action.setEnabled(False)
+
+        h_action.triggered.connect(lambda: self.align_edge_to(idx_a, idx_b, "horizontal"))
+        v_action.triggered.connect(lambda: self.align_edge_to(idx_a, idx_b, "vertical"))

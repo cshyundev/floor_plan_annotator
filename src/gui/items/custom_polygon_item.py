@@ -59,6 +59,8 @@ class CustomPolygonItem(PolygonItem):
                 action.setChecked(True)
             action.triggered.connect(lambda checked, k=key: self.change_type(k))
 
+        self._build_alignment_menu(menu, event.scenePos())
+
         menu.exec(event.screenPos())
         event.accept()
 

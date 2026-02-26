@@ -21,7 +21,7 @@
 - Annotations stored in original data coordinate system
 - Coordinate system metadata in project files (v2.0)
 
-### Snap & Alignment Guide System (2026-02-25)
+### Snap & Alignment Guide System (2026-02-26)
 - Global H/V angle snapping for all line-drawing tools
 - Relative parallel/perpendicular snapping against existing edges
 - Cross-object alignment guides (PPT-style) for drawing and dragging
@@ -29,8 +29,12 @@
 - Configurable thresholds, angle sets, and guide colors
 - EdgeItem hover: H/V status display with color feedback
 - EdgeItem context menu: Align to Horizontal/Vertical
-- NodeItem context menu: Make Perpendicular (Thales circle)
+- NodeItem context menu: Make Perpendicular (Thales circle) — supports wall and polygon nodes
 - First-click alignment snap for wall tool
+- PolygonItem (Room/CustomPolygon) context menu: Align nearest edge to Horizontal/Vertical (IMP-002)
+- PolygonItem hover: nearest edge H/V status display in status bar (IMP-002)
+- ObjectItem rotation: angle snap to 0°/90°/180°/270° with guide lines (IMP-003)
+- Shared geometry utilities extracted to `geometry_utils.py` for EdgeItem/PolygonItem reuse
 
 ### Occupancy Grid Map Support (2026-02-25)
 - ROS2 map_server format loading (YAML + PGM/PNG)
@@ -69,8 +73,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| IMP-002 | Room/Polygon 타입에 수직·수평·보정 기능 추가 | 2D 도구 | 중간 | - | 현재는 Wall만 지원, 모든 폴리곤 타입 지원 필요 |
-| IMP-003 | Object 회전 시 자동 정렬 및 보조선 기능 | Object 도구 | 중간 | - | Object 완성 후 정렬 및 가이드 필요 |
+| *(없음)* | | | | | |
 
 ### Feature
 

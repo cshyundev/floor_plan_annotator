@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt, QLineF, QPointF
 from PyQt6.QtGui import QPen, QBrush
 
 from src.core.config import ConfigManager
+from src.gui.items.geometry_utils import compute_hv_status, compute_aligned_positions
 
 
 class NodeItem(QGraphicsEllipseItem):
@@ -93,21 +94,36 @@ class NodeItem(QGraphicsEllipseItem):
         """Return the node on the other end of the edge."""
         return edge.end_node if edge.start_node is self else edge.start_node
 
+    def _get_neighbor_nodes(self):
+        """Get unique neighbor nodes from both edges and polygons."""
+        neighbors = set()
+        for edge in self.edges:
+            neighbors.add(self._get_neighbor_node(edge))
+        for poly in self.polygons:
+            idx = poly.nodes.index(self)
+            n = len(poly.nodes)
+            neighbors.add(poly.nodes[(idx - 1) % n])
+            neighbors.add(poly.nodes[(idx + 1) % n])
+        return list(neighbors)
+
     def _compute_perpendicular_position(self):
-        """Compute new position for this node so two edges meet at 90 degrees.
+        """Compute new position for this node so two adjacent lines meet at 90 degrees.
 
         Uses Thales' theorem: any point on a circle with diameter AB
         sees segment AB at exactly 90 degrees. Projects the current
         position onto that circle (closest point).
 
+        Works for nodes connected via wall edges and/or polygon edges.
+
         Returns:
             New QPointF for this node, or None if not applicable.
         """
-        if len(self.edges) != 2:
+        neighbors = self._get_neighbor_nodes()
+        if len(neighbors) != 2:
             return None
 
-        a = self._get_neighbor_node(self.edges[0]).pos()
-        b = self._get_neighbor_node(self.edges[1]).pos()
+        a = neighbors[0].pos()
+        b = neighbors[1].pos()
         mid = QPointF((a.x() + b.x()) / 2, (a.y() + b.y()) / 2)
         radius = math.hypot(b.x() - a.x(), b.y() - a.y()) / 2
 
@@ -143,7 +159,8 @@ class NodeItem(QGraphicsEllipseItem):
                     views[0].status_message.emit("Node moved to make 90\u00b0 angle.")
 
     def contextMenuEvent(self, event):
-        if len(self.edges) != 2:
+        neighbors = self._get_neighbor_nodes()
+        if len(neighbors) != 2:
             return super().contextMenuEvent(event)
 
         from PyQt6.QtWidgets import QMenu
@@ -151,8 +168,8 @@ class NodeItem(QGraphicsEllipseItem):
         action = menu.addAction("Make Perpendicular")
 
         # Disable if already perpendicular (dot product ≈ 0)
-        a = self._get_neighbor_node(self.edges[0]).pos()
-        b = self._get_neighbor_node(self.edges[1]).pos()
+        a = neighbors[0].pos()
+        b = neighbors[1].pos()
         c = self.pos()
         dot = (a.x() - c.x()) * (b.x() - c.x()) + (a.y() - c.y()) * (b.y() - c.y())
         if abs(dot) < 1e-9:
@@ -224,16 +241,9 @@ class EdgeItem(QGraphicsLineItem):
             (is_hv, deviation_deg, label) where deviation_deg is the
             angular distance from the nearest H/V axis.
         """
-        dx = self.end_node.pos().x() - self.start_node.pos().x()
-        dy = self.end_node.pos().y() - self.start_node.pos().y()
-        # Map to [0, 90] — only care about angle from horizontal
-        angle = math.degrees(math.atan2(abs(dy), abs(dx)))
-        if angle <= self._hv_threshold:
-            return True, angle, "Horizontal"
-        elif angle >= 90 - self._hv_threshold:
-            return True, 90 - angle, "Vertical"
-        else:
-            return False, min(angle, 90 - angle), None
+        return compute_hv_status(
+            self.start_node.pos(), self.end_node.pos(), self._hv_threshold,
+        )
 
     def hoverEnterEvent(self, event):
         is_hv, deviation, label = self._compute_hv_status()
@@ -264,14 +274,9 @@ class EdgeItem(QGraphicsLineItem):
         Returns:
             (new_start_pos, new_end_pos) as QPointF pair.
         """
-        start = self.start_node.pos()
-        end = self.end_node.pos()
-        if direction == "horizontal":
-            avg_y = (start.y() + end.y()) / 2
-            return QPointF(start.x(), avg_y), QPointF(end.x(), avg_y)
-        else:
-            avg_x = (start.x() + end.x()) / 2
-            return QPointF(avg_x, start.y()), QPointF(avg_x, end.y())
+        return compute_aligned_positions(
+            self.start_node.pos(), self.end_node.pos(), direction,
+        )
 
     def align_to(self, direction):
         """Align this edge to horizontal or vertical via undo command."""

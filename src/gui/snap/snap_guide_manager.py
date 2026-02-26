@@ -1,5 +1,7 @@
 """Scene-aware snap manager: creates/removes guide lines, delegates to SnapEngine."""
 
+import math
+
 from PyQt6.QtWidgets import QGraphicsLineItem
 from PyQt6.QtGui import QPen, QColor
 from PyQt6.QtCore import Qt, QPointF, QLineF
@@ -106,6 +108,61 @@ class SnapGuideManager:
 
         # Phase 1: return original position (guide-only, no position forcing)
         return QPointF(cursor_pos)
+
+    def snap_rotation_angle(
+        self,
+        center: QPointF,
+        angle_deg: float,
+        modifiers=None,
+    ) -> float:
+        """Snap a rotation angle to the nearest configured snap angle.
+
+        Shows a guide line through *center* at the snapped direction.
+        Returns the (possibly snapped) angle in degrees.
+        """
+        self.clear_guides()
+
+        if not self._is_snap_active(modifiers):
+            return angle_deg
+
+        threshold = self._config.get_ui_value("snap", "angle_threshold")
+        angle_set = self._config.get_ui_value("snap", "angle_set")
+
+        normalized = angle_deg % 360
+        if normalized < 0:
+            normalized += 360
+
+        best_snap = None
+        best_diff = float("inf")
+
+        for snap_angle in angle_set:
+            diff = abs(normalized - snap_angle)
+            diff = min(diff, 360.0 - diff)
+            if diff < threshold and diff < best_diff:
+                best_diff = diff
+                best_snap = snap_angle
+
+        if best_snap is None:
+            return angle_deg
+
+        extent = self._get_scene_extent()
+        guide_rad = math.radians(best_snap)
+        cos_a = math.cos(guide_rad)
+        sin_a = math.sin(guide_rad)
+
+        guide = GuideLine(
+            QPointF(center.x() - extent * cos_a, center.y() - extent * sin_a),
+            QPointF(center.x() + extent * cos_a, center.y() + extent * sin_a),
+            "orthogonal",
+        )
+        result = SnapResult(
+            snapped_pos=center,
+            was_snapped=True,
+            guides=[guide],
+        )
+        self._show_guides(result)
+
+        return best_snap
 
     def clear_guides(self):
         """Remove all active guide lines from the scene."""

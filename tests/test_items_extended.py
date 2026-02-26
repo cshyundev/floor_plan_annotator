@@ -112,6 +112,7 @@ class TestItemsExtended(unittest.TestCase):
 
                      event = MagicMock()
                      event.screenPos.return_value = QPointF(0, 0)
+                     event.scenePos.return_value = QPointF(5, 0)
 
                      room.contextMenuEvent(event)
 

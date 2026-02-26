@@ -64,6 +64,8 @@ class RoomItem(PolygonItem):
 
             action.triggered.connect(make_callback(key))
 
+        self._build_alignment_menu(menu, event.scenePos())
+
         menu.exec(event.screenPos())
         event.accept()
 
