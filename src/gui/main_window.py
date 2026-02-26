@@ -419,6 +419,9 @@ class MainWindow(QMainWindow):
 
     def load_data(self, file_path):
         """Load 3D data from file."""
+        # Reset UI state (e.g. re-enable slicing controls disabled by occupancy grid)
+        self._set_3d_controls_for_point_cloud()
+
         # Apply current coordinate system before loading
         cs = self.coord_sys_widget.current_coordinate_system()
         self._apply_coordinate_system(cs)
@@ -604,6 +607,7 @@ class MainWindow(QMainWindow):
         self.undo_stack.clear()
         self.canvas_2d.scene.clear()
         self.canvas_2d._scene_initialized = False
+        self._all_points_cache = None
         # Setup display
         self._setup_occupancy_grid_display(image_data, metadata, bounds, scale)
 
