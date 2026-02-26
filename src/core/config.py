@@ -112,6 +112,18 @@ class ConfigManager:
     def get_object_types(self):
         return self.objects.get("types", {})
 
+    def get_object_3d_defaults(self, type_key):
+        """Return (elevation, height_3d) for the given object type."""
+        type_conf = self.get_object_type(type_key)
+        fallback_height = self.get_ui_value("annotation_3d", "object_height")
+        if type_conf:
+            elevation = type_conf.get("default_elevation", 0.0)
+            height_3d = type_conf.get("default_3d_height", fallback_height)
+        else:
+            elevation = 0.0
+            height_3d = fallback_height
+        return elevation, height_3d
+
     def save_config(self, category):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -161,24 +173,31 @@ class ConfigManager:
         self.save_config("custom_polygons")
         return True
 
-    def add_object_type(self, key, name, color, border):
+    def add_object_type(self, key, name, color, border,
+                        default_elevation=0.0, default_3d_height=0.5):
         if key in self.objects.get("types", {}):
             return False
         if "types" not in self.objects:
             self.objects["types"] = {}
         max_idx = max((v.get("index", 0) for v in self.objects["types"].values()), default=0)
         self.objects["types"][key] = {
-            "name": name, "color": color, "border": border, "index": max_idx + 1
+            "name": name, "color": color, "border": border, "index": max_idx + 1,
+            "default_elevation": default_elevation, "default_3d_height": default_3d_height,
         }
         self.save_config("objects")
         return True
 
-    def update_object_type(self, key, name=None, color=None, border=None):
+    def update_object_type(self, key, name=None, color=None, border=None,
+                           default_elevation=None, default_3d_height=None):
         if key not in self.objects.get("types", {}):
             return False
         if name: self.objects["types"][key]["name"] = name
         if color: self.objects["types"][key]["color"] = color
         if border: self.objects["types"][key]["border"] = border
+        if default_elevation is not None:
+            self.objects["types"][key]["default_elevation"] = default_elevation
+        if default_3d_height is not None:
+            self.objects["types"][key]["default_3d_height"] = default_3d_height
         self.save_config("objects")
         return True
 

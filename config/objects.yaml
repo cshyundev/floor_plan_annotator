@@ -11,6 +11,8 @@ types:
     - 130
     - 200
     index: 1
+    default_elevation: 0.0
+    default_3d_height: 0.5
   appliance:
     name: Appliance
     color:
@@ -23,6 +25,8 @@ types:
     - 160
     - 80
     index: 2
+    default_elevation: 0.0
+    default_3d_height: 0.8
   obstacle:
     name: Obstacle
     color:
@@ -35,6 +39,8 @@ types:
     - 80
     - 200
     index: 3
+    default_elevation: 0.0
+    default_3d_height: 0.5
   obj_b8f5:
     name: Table
     color:
@@ -47,4 +53,6 @@ types:
     - 39
     - 107
     index: 4
+    default_elevation: 0.0
+    default_3d_height: 0.75
 default_type: furniture

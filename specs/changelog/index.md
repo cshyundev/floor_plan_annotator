@@ -1,5 +1,6 @@
 # Changelog Index
 
+- 2026-02-26 [Added] Object 3D Properties: per-type default elevation/height, per-instance override via Properties Panel and Ctrl+Wheel, wireframe rendering in 3D viewer (FEAT-005, REQ-025)
 - 2026-02-26 [Fixed] Reset UI state on data load: re-enable slicing controls when loading 3D data after occupancy grid, clear stale projection cache when loading occupancy grid (BUG-001)
 - 2026-02-26 [Changed] Updated status/index.md with BUG-001, IMP-002, IMP-003 entries
 - 2026-02-25 [Added] Shared nodes between annotations: polygon drawing tools (room, custom polygon) reuse existing NodeItems on click, smart orphan detection on deletion preserves shared nodes, boundary edge tagging for correct load/delete behavior (FEAT-004, REQ-024)

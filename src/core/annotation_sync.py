@@ -120,15 +120,15 @@ class WallGeometryBuilder:
 
 class ObjectGeometryBuilder:
     """
-    Creates 3D OBB box meshes for object annotations.
+    Creates 3D OBB wireframe boxes for object annotations.
     """
 
     def create_object_box(self, center: Tuple[float, float], width: float, height: float,
                           angle: float, z_min: float, z_max: float,
                           color: Tuple[float, float, float],
-                          coord_sys: CoordinateSystem | None = None) -> o3d.geometry.TriangleMesh:
+                          coord_sys: CoordinateSystem | None = None) -> o3d.geometry.LineSet:
         """
-        Create a 3D oriented bounding box mesh.
+        Create a 3D oriented bounding box wireframe.
 
         Args:
             center: (floor_h, floor_v) center position
@@ -141,7 +141,7 @@ class ObjectGeometryBuilder:
             coord_sys: Coordinate system for axis mapping (defaults to ROS)
 
         Returns:
-            Open3D TriangleMesh of the oriented box
+            Open3D LineSet of the oriented box wireframe
         """
         import math
         cs = coord_sys or CoordinateSystem.ros()
@@ -161,25 +161,21 @@ class ObjectGeometryBuilder:
                 ry = dx * sin_a + dy * cos_a
                 vertices.append(cs.make_3d_point(cx + rx, cy + ry, z))
 
-        # 12 triangles forming the 6 faces (2 triangles each)
-        triangles = [
-            # Bottom face (0-3)
-            [0, 1, 2], [0, 2, 3],
-            # Top face (4-7)
-            [4, 6, 5], [4, 7, 6],
-            # Side faces
-            [0, 4, 1], [1, 4, 5],
-            [1, 5, 2], [2, 5, 6],
-            [2, 6, 3], [3, 6, 7],
-            [3, 7, 0], [0, 7, 4],
+        # 12 edges: 4 bottom + 4 top + 4 vertical
+        lines = [
+            # Bottom face edges (vertices 0-3)
+            [0, 1], [1, 2], [2, 3], [3, 0],
+            # Top face edges (vertices 4-7)
+            [4, 5], [5, 6], [6, 7], [7, 4],
+            # Vertical edges
+            [0, 4], [1, 5], [2, 6], [3, 7],
         ]
 
-        mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(vertices)
-        mesh.triangles = o3d.utility.Vector3iVector(triangles)
-        mesh.paint_uniform_color(color)
-        mesh.compute_vertex_normals()
-        return mesh
+        line_set = o3d.geometry.LineSet()
+        line_set.points = o3d.utility.Vector3dVector(vertices)
+        line_set.lines = o3d.utility.Vector2iVector(lines)
+        line_set.colors = o3d.utility.Vector3dVector([color] * len(lines))
+        return line_set
 
 
 class AnnotationSync3D:
@@ -218,7 +214,7 @@ class AnnotationSync3D:
         self.room_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
         self.wall_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
         self.custom_polygon_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
-        self.object_geometries: Dict[str, o3d.geometry.TriangleMesh] = {}
+        self.object_geometries: Dict[str, o3d.geometry.LineSet] = {}
 
         # Runtime visibility state (categories hidden by user via UI)
         self._hidden_categories: set = set()
@@ -450,13 +446,13 @@ class AnnotationSync3D:
             color = (0.6, 0.78, 1.0)
 
         floor_level = self._coord_sys.floor_level
-        obj_height = self.config.get_ui_value("annotation_3d", "object_height")
-        z_max = floor_level + obj_height
+        z_min = floor_level + object_item.elevation
+        z_max = z_min + object_item.height_3d
 
         center = (object_item.center.x(), self._to_world_floor_v(object_item.center.y()))
         mesh = self.object_builder.create_object_box(
             center, object_item.width, object_item.height,
-            object_item.angle, floor_level, z_max, color,
+            object_item.angle, z_min, z_max, color,
             coord_sys=self._coord_sys,
         )
 

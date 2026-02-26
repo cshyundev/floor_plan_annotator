@@ -15,7 +15,8 @@ class ObjectItem(QGraphicsPolygonItem):
     annotation_type = "object"
 
     def __init__(self, center: QPointF, width: float, height: float,
-                 angle: float = 0.0, object_type: str = "furniture", object_id: str = ""):
+                 angle: float = 0.0, object_type: str = "furniture", object_id: str = "",
+                 elevation: float | None = None, height_3d: float | None = None):
         super().__init__()
         self.center = center
         self.width = width
@@ -23,6 +24,11 @@ class ObjectItem(QGraphicsPolygonItem):
         self.angle = angle  # degrees
         self.object_type = object_type
         self.object_id = object_id
+
+        config = ConfigManager.instance()
+        default_elev, default_h3d = config.get_object_3d_defaults(object_type)
+        self.elevation = elevation if elevation is not None else default_elev
+        self.height_3d = height_3d if height_3d is not None else default_h3d
 
         self._drag_start_pos = None
         self._drag_start_center = None
@@ -33,8 +39,6 @@ class ObjectItem(QGraphicsPolygonItem):
         self._initial_width = None
         self._initial_height = None
         self._initial_angle = None
-
-        config = ConfigManager.instance()
         self._handle_size = config.get_ui_value("object", "handle_size")
         self._rot_handle_offset = config.get_ui_value("object", "rotation_handle_offset")
 

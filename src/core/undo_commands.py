@@ -90,14 +90,44 @@ class ChangeObjectTypeCommand(QUndoCommand):
         self.object_item = object_item
         self.old_type = old_type
         self.new_type = new_type
+        self.old_elevation = object_item.elevation
+        self.old_height_3d = object_item.height_3d
+        from src.core.config import ConfigManager
+        config = ConfigManager.instance()
+        self.new_elevation, self.new_height_3d = config.get_object_3d_defaults(new_type)
 
     def redo(self):
         self.object_item.object_type = self.new_type
+        self.object_item.elevation = self.new_elevation
+        self.object_item.height_3d = self.new_height_3d
         self.object_item.update_style()
 
     def undo(self):
         self.object_item.object_type = self.old_type
+        self.object_item.elevation = self.old_elevation
+        self.object_item.height_3d = self.old_height_3d
         self.object_item.update_style()
+
+
+class ChangeObject3DPropertiesCommand(QUndoCommand):
+    """Undo command for changing object elevation and 3D height."""
+
+    def __init__(self, object_item, old_elevation, old_height_3d,
+                 new_elevation, new_height_3d):
+        super().__init__("Change Object 3D Properties")
+        self.object_item = object_item
+        self.old_elevation = old_elevation
+        self.old_height_3d = old_height_3d
+        self.new_elevation = new_elevation
+        self.new_height_3d = new_height_3d
+
+    def redo(self):
+        self.object_item.elevation = self.new_elevation
+        self.object_item.height_3d = self.new_height_3d
+
+    def undo(self):
+        self.object_item.elevation = self.old_elevation
+        self.object_item.height_3d = self.old_height_3d
 
 
 class TransformObjectCommand(QUndoCommand):

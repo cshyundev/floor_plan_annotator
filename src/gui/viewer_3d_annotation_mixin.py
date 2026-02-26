@@ -91,14 +91,15 @@ class AnnotationMixin:
         self.renderer.scene.remove_geometry(f"cpoly_{polygon_id}")
         self.render_scene()
 
-    def add_object_geometry(self, object_id: str, mesh):
-        """Add object OBB box to scene."""
+    def add_object_geometry(self, object_id: str, line_set):
+        """Add object OBB wireframe to scene."""
         if not self.renderer or self._renderer_failed:
             return
         self.renderer.scene.remove_geometry(f"obj_{object_id}")
         mat = rendering.MaterialRecord()
-        mat.shader = "defaultLit"
-        self.renderer.scene.add_geometry(f"obj_{object_id}", mesh, mat)
+        mat.shader = "unlitLine"
+        mat.line_width = 2.0
+        self.renderer.scene.add_geometry(f"obj_{object_id}", line_set, mat)
         self.render_scene()
 
     def remove_object_geometry(self, object_id: str):

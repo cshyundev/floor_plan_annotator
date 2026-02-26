@@ -56,6 +56,14 @@
 - Smart orphan detection on deletion preserves shared nodes
 - Boundary edge tagging for correct load/delete behavior
 
+### Object 3D Properties (FEAT-005) (2026-02-26)
+- Per-type default elevation and 3D height in `objects.yaml` (REQ-025)
+- Per-instance override via Properties Panel spinboxes
+- Ctrl+Wheel for 3D Height, Ctrl+Shift+Wheel for Elevation adjustment
+- 3D viewer: per-object z_min/z_max wireframe rendering
+- Type change resets to new type's 3D defaults with undo support
+- Backward compatible project load (old files use type defaults)
+
 ### Development Infrastructure (2026-02-15)
 - Python package structure with pyproject.toml
 - UV-based dependency management
@@ -67,7 +75,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| BUG-001 | 2D 맵 로드 후 3D 데이터 전환 시 슬라이싱 기능 비활성화 | 3D View / 기능 전환 | 높음 | - | 슬라이싱 기능 포함 다른 기능들이 비활성 상태 유지 |
+| *(없음)* | | | | | |
 
 ### Improvement
 

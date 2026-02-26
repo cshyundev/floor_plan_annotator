@@ -26,3 +26,4 @@
 - [REQ-022: Coordinate System Configuration](REQ-022.md) — Implemented
 - [REQ-023: 2D Slice Color Projection](REQ-023.md) — Implemented
 - [REQ-024: Shared Nodes Between Annotations](REQ-024.md) — Implemented
+- [REQ-025: Object 3D Properties](REQ-025.md) — Proposed

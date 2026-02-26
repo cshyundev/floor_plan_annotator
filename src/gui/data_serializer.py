@@ -57,6 +57,8 @@ class DataSerializer:
                     object_type=item.object_type,
                 )
                 obj.id = item.object_id
+                obj.z_min = item.elevation
+                obj.z_max = item.elevation + item.height_3d
                 data.objects.append(obj)
 
         return data
@@ -185,6 +187,16 @@ class DataSerializer:
 
         for obj in data.objects:
             center = QPointF(obj.center.x, obj.center.y)
+
+            # Backward compat: if z_min/z_max are AnnotationBase defaults,
+            # use per-type defaults instead
+            if obj.z_min == 0.0 and obj.z_max == 2.5:
+                elevation = None
+                height_3d = None
+            else:
+                elevation = obj.z_min
+                height_3d = obj.z_max - obj.z_min
+
             obj_item = ObjectItem(
                 center=center,
                 width=obj.width,
@@ -192,6 +204,8 @@ class DataSerializer:
                 angle=obj.rotation,
                 object_type=obj.object_type,
                 object_id=obj.id,
+                elevation=elevation,
+                height_3d=height_3d,
             )
             self.canvas.scene.addItem(obj_item)
 

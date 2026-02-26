@@ -48,12 +48,21 @@ class EventCoordinator:
             self.canvas.current_tool.on_mouse_release(context)
 
     def handle_wheel(self, event):
-        """Handle mouse wheel event for zooming.
+        """Handle mouse wheel event for zooming or 3D property adjustment.
+
+        Ctrl + Wheel: Adjust selected object's 3D Height (±0.1m)
+        Ctrl + Shift + Wheel: Adjust selected object's Elevation (±0.1m)
+        Otherwise: Normal zoom behavior.
 
         Args:
             event: QWheelEvent
         """
-        from src.core.config import ConfigManager
+        modifiers = event.modifiers()
+        ctrl_held = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+
+        if ctrl_held:
+            if self._handle_object_3d_wheel(event):
+                return
 
         zoom_in = event.angleDelta().y() > 0
         factor = 1.1 if zoom_in else 0.9
@@ -72,6 +81,47 @@ class EventCoordinator:
         # Check bounds and apply zoom only if within limits
         if min_zoom <= new_zoom <= max_zoom:
             self.canvas.scale(factor, factor)
+
+    def _handle_object_3d_wheel(self, event):
+        """Adjust selected object's 3D properties via Ctrl+Wheel.
+
+        Returns:
+            True if handled, False if no single ObjectItem selected.
+        """
+        from src.gui.items import ObjectItem
+        from src.core.undo_commands import ChangeObject3DPropertiesCommand
+
+        selected = [
+            item for item in self.canvas.scene.selectedItems()
+            if isinstance(item, ObjectItem)
+        ]
+        if len(selected) != 1:
+            return False
+
+        item = selected[0]
+        step = 0.1
+        delta = step if event.angleDelta().y() > 0 else -step
+
+        old_elev = item.elevation
+        old_h3d = item.height_3d
+
+        shift_held = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if shift_held:
+            new_elev = round(old_elev + delta, 2)
+            new_h3d = old_h3d
+            self.canvas.status_message.emit(f"Elevation: {new_elev:.2f} m")
+        else:
+            new_elev = old_elev
+            new_h3d = max(0.01, round(old_h3d + delta, 2))
+            self.canvas.status_message.emit(f"3D Height: {new_h3d:.2f} m")
+
+        if new_elev != old_elev or new_h3d != old_h3d:
+            cmd = ChangeObject3DPropertiesCommand(
+                item, old_elev, old_h3d, new_elev, new_h3d
+            )
+            self.canvas.push_command(cmd)
+
+        return True
 
     def handle_key_press(self, event):
         """Handle keyboard event.

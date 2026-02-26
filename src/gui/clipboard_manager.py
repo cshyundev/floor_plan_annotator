@@ -46,6 +46,8 @@ class ClipboardManager:
                     "width": item.width,
                     "height": item.height,
                     "angle": item.angle,
+                    "elevation": item.elevation,
+                    "height_3d": item.height_3d,
                 }
                 self._clipboard.append(data)
 
@@ -96,6 +98,8 @@ class ClipboardManager:
                     angle=data["angle"],
                     object_type=data["object_type"],
                     object_id=object_id,
+                    elevation=data.get("elevation"),
+                    height_3d=data.get("height_3d"),
                 )
                 new_items.append(obj)
 

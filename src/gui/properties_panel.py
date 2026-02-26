@@ -95,6 +95,18 @@ class PropertiesPanel(QWidget):
         self.obj_angle.valueChanged.connect(self._on_object_edited)
         form.addRow("Angle:", self.obj_angle)
 
+        separator_3d = QLabel("3D Properties")
+        separator_3d.setStyleSheet("font-weight: bold; color: #8890A0; margin-top: 8px;")
+        form.addRow(separator_3d)
+
+        self.obj_elevation = self._make_spinbox(min_val=-10.0, max_val=10.0, suffix=" m")
+        self.obj_elevation.valueChanged.connect(self._on_object_3d_edited)
+        form.addRow("Elevation:", self.obj_elevation)
+
+        self.obj_height_3d = self._make_spinbox(min_val=0.01, max_val=10.0, suffix=" m")
+        self.obj_height_3d.valueChanged.connect(self._on_object_3d_edited)
+        form.addRow("3D Height:", self.obj_height_3d)
+
     def _init_wall_page(self):
         self.form_widget_wall = QWidget()
         form = QFormLayout(self.form_widget_wall)
@@ -186,6 +198,8 @@ class PropertiesPanel(QWidget):
             self.obj_w.setValue(item.width)
             self.obj_h.setValue(item.height)
             self.obj_angle.setValue(item.angle)
+            self.obj_elevation.setValue(item.elevation)
+            self.obj_height_3d.setValue(item.height_3d)
             self.stack.setCurrentIndex(1)
 
         elif isinstance(item, EdgeItem):
@@ -280,6 +294,26 @@ class PropertiesPanel(QWidget):
 
         from src.core.undo_commands import TransformObjectCommand
         cmd = TransformObjectCommand(item, old_state, new_state)
+        self.canvas.push_command(cmd)
+
+    def _on_object_3d_edited(self):
+        """Apply edited 3D property values with undo support."""
+        if self._updating or self._current_item is None:
+            return
+        if not isinstance(self._current_item, ObjectItem):
+            return
+
+        item = self._current_item
+        old_elev = item.elevation
+        old_h3d = item.height_3d
+        new_elev = self.obj_elevation.value()
+        new_h3d = self.obj_height_3d.value()
+
+        if old_elev == new_elev and old_h3d == new_h3d:
+            return
+
+        from src.core.undo_commands import ChangeObject3DPropertiesCommand
+        cmd = ChangeObject3DPropertiesCommand(item, old_elev, old_h3d, new_elev, new_h3d)
         self.canvas.push_command(cmd)
 
     def _on_wall_edited(self):
