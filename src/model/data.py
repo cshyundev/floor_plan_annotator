@@ -141,7 +141,6 @@ class MapMetadata:
     def to_dict(self) -> dict:
         return {
             "image_path": self.image_path,
-            "image_path_absolute": self.image_path_absolute,
             "resolution": self.resolution,
             "origin_x": self.origin_x,
             "origin_y": self.origin_y,

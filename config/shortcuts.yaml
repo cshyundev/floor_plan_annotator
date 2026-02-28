@@ -8,8 +8,10 @@ tools:
     - "Delete"
     - "Backspace"
 file:
+  new_project: "Ctrl+N"
   open_project: "Ctrl+O"
   save_project: "Ctrl+S"
+  save_project_as: "Ctrl+Shift+S"
 edit:
   undo: "Ctrl+Z"
   redo: "Ctrl+Y"

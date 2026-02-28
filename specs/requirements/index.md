@@ -27,3 +27,9 @@
 - [REQ-023: 2D Slice Color Projection](REQ-023.md) — Implemented
 - [REQ-024: Shared Nodes Between Annotations](REQ-024.md) — Implemented
 - [REQ-025: Object 3D Properties](REQ-025.md) — Proposed
+- [REQ-026: Project Lifecycle Management](REQ-026.md) — Proposed
+- [REQ-027: Recent Files](REQ-027.md) — Proposed
+- [REQ-028: Project JSON Schema v4.0](REQ-028.md) — Proposed
+- [REQ-029: Auto-save Recovery](REQ-029.md) — Proposed
+- [REQ-030: Project Folder Structure Convention](REQ-030.md) — Proposed
+- [REQ-031: GLB/GLTF Data Source with Texture Support](REQ-031.md) — Proposed

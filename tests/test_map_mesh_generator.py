@@ -29,8 +29,8 @@ _app = QApplication.instance() or QApplication([])
 _DATA_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "data")
 )
-_TEST_YAML = os.path.join(_DATA_DIR, "test_map.yaml")
-_TEST_PNG = os.path.join(_DATA_DIR, "test_map.png")
+_TEST_YAML = os.path.join(_DATA_DIR, "occupancy_grid", "test_map.yaml")
+_TEST_PNG = os.path.join(_DATA_DIR, "occupancy_grid", "test_map.png")
 
 
 @unittest.skipUnless(HAS_OPEN3D, "open3d not installed")

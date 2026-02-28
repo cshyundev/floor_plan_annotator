@@ -1,5 +1,7 @@
 # Changelog Index
 
+- 2026-02-28 [Fixed] 3D viewer annotations missing after loading annotations.json: renderer created asynchronously (200ms timer), so add on_renderer_ready callback in Viewer3D and re-sync annotations once renderer is ready
+- 2026-02-28 [Fixed] 2D canvas background missing after loading annotations.json: add explicit _update_2d_slice() call in _detect_annotations_for_3d_file() and open_project() after data source restore (BUG-003)
 - 2026-02-28 [Changed] Rename "Load Point Cloud" menu item to "Load 3D Data..." (IMP-004, REQ-031)
 - 2026-02-28 [Fixed] Mesh loading 2D canvas blank: remove _renderer_failed guard from load_geometry(), use scene.dump() in _load_gltf() for correct multi-node GLB transforms, pass original_geometry to processor instead of cropped copy, add traceback logging on load failure (BUG-002, REQ-031)
 - 2026-02-27 [Changed] 2D Canvas interaction performance optimization: batch polygon drag updates, snap guide object pooling, Qt viewport caching, ObjectItem trig caching, redundant prepareGeometryChange removal ([detail](2026-02-27-canvas-drag-performance.md))

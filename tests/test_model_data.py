@@ -134,20 +134,24 @@ class TestMapMetadata(unittest.TestCase):
         d = meta.to_dict()
 
         expected_keys = {
-            "image_path", "image_path_absolute", "resolution",
+            "image_path", "resolution",
             "origin_x", "origin_y", "origin_yaw", "negate",
             "occupied_thresh", "free_thresh", "image_width", "image_height",
         }
         self.assertEqual(set(d.keys()), expected_keys)
+        self.assertNotIn("image_path_absolute", d)
 
     def test_roundtrip(self):
-        """to_dict then from_dict should preserve every field."""
+        """to_dict then from_dict should preserve every field except image_path_absolute."""
         original = self._make_metadata()
         d = original.to_dict()
+        # image_path_absolute is runtime-only — not serialized
+        self.assertNotIn("image_path_absolute", d)
         restored = MapMetadata.from_dict(d)
 
         self.assertEqual(restored.image_path, original.image_path)
-        self.assertEqual(restored.image_path_absolute, original.image_path_absolute)
+        # image_path_absolute is empty after roundtrip (not saved to disk)
+        self.assertEqual(restored.image_path_absolute, "")
         self.assertAlmostEqual(restored.resolution, original.resolution)
         self.assertAlmostEqual(restored.origin_x, original.origin_x)
         self.assertAlmostEqual(restored.origin_y, original.origin_y)
@@ -166,6 +170,17 @@ class TestMapMetadata(unittest.TestCase):
         self.assertAlmostEqual(meta.origin_x, 0.0)
         self.assertAlmostEqual(meta.origin_y, 0.0)
         self.assertEqual(meta.negate, 0)
+
+    def test_from_dict_reads_legacy_absolute_path(self):
+        """Legacy files that include image_path_absolute should still load it into memory."""
+        d = {
+            "image_path": "maps/floor1.png",
+            "image_path_absolute": "/home/user/project/maps/floor1.png",
+            "resolution": 0.05,
+        }
+        meta = MapMetadata.from_dict(d)
+        self.assertEqual(meta.image_path, "maps/floor1.png")
+        self.assertEqual(meta.image_path_absolute, "/home/user/project/maps/floor1.png")
 
 
 class TestProjectDataWithMapMetadata(unittest.TestCase):

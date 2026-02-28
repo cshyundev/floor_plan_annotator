@@ -112,3 +112,48 @@ class TestSaveLoadRoundtrip:
         # Load should restore to 2 rooms
         _reload_from_data(canvas, data)
         assert len(items_of_type(canvas, RoomItem)) == 2
+
+
+@pytest.mark.e2e
+class TestBackgroundRestoredAfterLoad:
+    """Verify that update_background() after load_from_data() correctly sets background_item.
+
+    This validates the fix for BUG-003: 2D canvas projection missing after loading
+    annotations.json. The fix adds an explicit _update_2d_slice() call in
+    _detect_annotations_for_3d_file() and open_project() to restore the background
+    that was cleared by load_from_data() → scene.clear().
+    """
+
+    def test_background_item_set_after_reload(self, canvas, undo_stack):
+        """After _reload_from_data (load_from_data + update_background), background_item is non-None."""
+        draw_wall(canvas, 1.0, 1.0, 5.0, 1.0)
+        data = canvas.save_to_data()
+        _reload_from_data(canvas, data)
+        assert canvas.background_item is not None
+
+    def test_background_item_in_scene_after_reload(self, canvas, undo_stack):
+        """After reload, background_item is present in the scene (not detached)."""
+        draw_wall(canvas, 1.0, 1.0, 5.0, 1.0)
+        data = canvas.save_to_data()
+        _reload_from_data(canvas, data)
+        assert canvas.background_item in canvas.scene.items()
+
+    def test_background_none_before_reload_no_segfault(self, canvas, undo_stack):
+        """Setting background_item = None before load_from_data() is safe (no segfault).
+
+        This documents the required pattern for BUG-003 fix: background_item must be
+        cleared before scene.clear() to avoid holding a stale C++ pixmap reference.
+        """
+        draw_wall(canvas, 1.0, 1.0, 5.0, 1.0)
+        data = canvas.save_to_data()
+        # Simulate what _detect_annotations_for_3d_file() does
+        canvas.background_item = None
+        canvas.load_from_data(data)
+        # background_item is None here (no update_background called yet)
+        assert canvas.background_item is None
+        # After explicit update_background call (what _update_2d_slice() triggers),
+        # the background is restored
+        img = np.zeros((500, 500), dtype=np.uint8)
+        canvas.update_background(img, (0.0, 0.0, 10.0, 10.0), 50.0)
+        assert canvas.background_item is not None
+        assert canvas.background_item in canvas.scene.items()

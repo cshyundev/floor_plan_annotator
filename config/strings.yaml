@@ -4,10 +4,12 @@ window:
 
 menu:
   file: "File"
+  new_project: "New"
   load_point_cloud: "Load 3D Data..."
   load_occupancy_grid: "Load Occupancy Grid..."
-  open_project: "Open Project..."
-  save_project: "Save Project..."
+  open_project: "Open Annotations..."
+  save_project: "Save"
+  save_project_as: "Save As..."
   exit: "Exit"
 
 tools:

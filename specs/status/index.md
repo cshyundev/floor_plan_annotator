@@ -76,13 +76,20 @@
 - UV-based dependency management
 - Auto-load development data for testing
 
+### Project Lifecycle Management — FEAT-006 (2026-02-28)
+- New/Save/Save As with annotations.json fixed-name convention (REQ-026, REQ-030)
+- Dirty state tracking via QUndoStack.cleanChanged → title bar feedback
+- Auto-detect annotations.json on 3D data load with pairing validation
+- Bidirectional entry: open 3D file first or open annotations.json first
+- Unsaved-change confirmation on New / Load / app close
+
 ## TODO
 
 ### Bug
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| *(없음)* | | | | | |
+| BUG-003 | annotations.json 불러온 후 2D canvas projection 없음 | main_window | P0 | REQ-026 | 배경 슬라이스 이미지 미표시 |
 
 ### Improvement
 
@@ -94,12 +101,9 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| FEAT-006 | Project Lifecycle Management | main_window, io | P0 | REQ-026 | New/Save/SaveAs, dirty 추적, 타이틀바, 종료 경고 |
 | FEAT-007 | Recent Files | main_window | P1 | REQ-027 | QSettings, 최근 5개, Clear 기능 |
 | FEAT-008 | Project JSON Schema v4.0 | model/data, core/io | P1 | REQ-028 | project_name, 타임스탬프 추가, image_path_absolute 제거 |
 | FEAT-009 | Auto-save Recovery | main_window, core/io | P2 | REQ-029 | 5분 주기 자동 저장, 크래시 복구 |
-| FEAT-010 | Project Folder Structure Convention | 문서/컨벤션 | P0 | REQ-030 | 1폴더=1맵+1JSON, 상대경로, 다층은 별도 폴더 |
-| *(없음)* | | | | | |
 
 ## In Progress
 

@@ -19,6 +19,7 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         self._image_data = None  # Store numpy array to prevent garbage collection
         self._renderer_failed = False  # Track if renderer initialization failed
         self._shown_once = False  # Track if widget has been shown at least once
+        self.on_renderer_ready = None  # Optional callback: called once after renderer is created
 
         # Coordinate system (default ROS, updated via set_coordinate_system)
         self._coord_sys: CoordinateSystem = CoordinateSystem.ros()
@@ -115,6 +116,9 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
             self._add_axes_to_scene()
             self._add_grid_to_scene()
             self.render_scene()
+            # Notify listeners that renderer is ready (e.g. to re-sync annotations).
+            if self.on_renderer_ready:
+                self.on_renderer_ready()
         except Exception as e:
             # Prevent crashes from renderer creation failures
             print(f"Warning: Viewer3D renderer creation failed: {e}")

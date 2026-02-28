@@ -76,6 +76,10 @@ class MainWindow(QMainWindow):
         # All-points projection cache (invalidated on data load / coord sys change)
         self._all_points_cache = None  # (img, bounds, scale) or None
 
+        # Project lifecycle state (FEAT-006)
+        self._current_file_path = None  # type: str | None  — annotations.json save path
+        self._3d_file_path = None       # type: str | None  — currently loaded 3D data absolute path
+
         # Controls (Dock)
         self.create_controls()
 
@@ -91,19 +95,75 @@ class MainWindow(QMainWindow):
             ConfigManager.instance()
         )
 
+        # Re-sync annotations once the 3D renderer is ready (it is created asynchronously
+        # via a 200ms timer in Viewer3D.showEvent, so annotations added before that point
+        # are silently dropped by add_*_geometry()).
+        self.viewer_3d.on_renderer_ready = lambda: \
+            self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+
         # Connect undo stack changes to sync + properties refresh
         self.undo_stack.indexChanged.connect(self.on_undo_stack_changed)
         self.undo_stack.indexChanged.connect(
             lambda: self.properties_panel._on_selection_changed()
         )
+        # Dirty state tracking (FEAT-006)
+        self.undo_stack.cleanChanged.connect(self._on_dirty_changed)
 
         # Menu Bar
         self.create_menu()
+
+    # ── Lifecycle helpers (FEAT-006) ────────────────────────────────────────
+
+    def _on_dirty_changed(self, clean: bool) -> None:
+        self._update_title_bar()
+
+    def _update_title_bar(self) -> None:
+        dirty = not self.undo_stack.isClean()
+        if self._current_file_path:
+            name = os.path.basename(self._current_file_path)
+        elif self._3d_file_path:
+            name = os.path.basename(self._3d_file_path)
+        else:
+            name = None
+        title = "Floor Plan Annotator"
+        if name:
+            title += f" \u2014 {name}"
+        if dirty:
+            title += " *"
+        self.setWindowTitle(title)
+
+    def _confirm_discard_changes(self) -> bool:
+        """If there are unsaved changes, prompt Save / Discard / Cancel.
+
+        Returns True if it is safe to proceed (saved or discarded), False if cancelled.
+        """
+        if self.undo_stack.isClean():
+            return True
+        reply = QMessageBox.question(
+            self, "Unsaved Changes",
+            "저장하지 않은 변경사항이 있습니다. 저장할까요?",
+            QMessageBox.StandardButton.Save |
+            QMessageBox.StandardButton.Discard |
+            QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Save:
+            return self.save_project()
+        elif reply == QMessageBox.StandardButton.Discard:
+            return True
+        else:
+            return False
 
     def create_menu(self):
         config = ConfigManager.instance()
         menubar = self.menuBar()
         file_menu = menubar.addMenu(config.get_string("menu", "file"))
+
+        new_action = QAction(config.get_string("menu", "new_project"), self)
+        new_action.setShortcut(config.get_shortcut("file", "new_project") or "Ctrl+N")
+        new_action.triggered.connect(self.new_project)
+        file_menu.addAction(new_action)
+
+        file_menu.addSeparator()
 
         load_action = QAction(config.get_string("menu", "load_point_cloud"), self)
         load_action.triggered.connect(self.load_point_cloud)
@@ -125,6 +185,11 @@ class MainWindow(QMainWindow):
         save_proj_action.triggered.connect(self.save_project)
         file_menu.addAction(save_proj_action)
 
+        save_as_action = QAction(config.get_string("menu", "save_project_as"), self)
+        save_as_action.setShortcut(config.get_shortcut("file", "save_project_as") or "Ctrl+Shift+S")
+        save_as_action.triggered.connect(self.save_project_as)
+        file_menu.addAction(save_as_action)
+
         file_menu.addSeparator()
 
         exit_action = QAction(config.get_string("menu", "exit"), self)
@@ -137,46 +202,163 @@ class MainWindow(QMainWindow):
         manage_types_action.triggered.connect(self._open_type_editor)
         edit_menu.addAction(manage_types_action)
 
-    def save_project(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Project", "", "JSON Files (*.json)")
-        if file_path:
-            from src.core.io import ProjectIO
-            # 1. Get data from canvas
-            project_data = self.canvas_2d.save_to_data()
-            # 2. Attach coordinate system
-            project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
-            # 3. Attach map metadata with relative path
-            if self._map_metadata is not None:
-                meta_copy = MapMetadata.from_dict(self._map_metadata.to_dict())
-                meta_copy.image_path = MapLoader.make_relative_path(
-                    self._map_metadata.image_path_absolute, file_path
-                )
-                project_data.map_metadata = meta_copy
-            # 4. Save
-            ProjectIO.save_project(project_data, file_path)
-            print(f"Project saved to {file_path}")
+    def _do_save(self, path: str) -> bool:
+        """Write annotations to *path*. Sets _current_file_path and marks stack clean.
 
-    def open_project(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "JSON Files (*.json)")
-        if file_path:
-            from src.core.io import ProjectIO
-            # 1. Load data
+        Returns True on success, False on error.
+        """
+        from src.core.io import ProjectIO
+        try:
+            project_data = self.canvas_2d.save_to_data()
+            project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
+            if self._map_metadata is not None:
+                self._map_metadata.image_path = MapLoader.make_relative_path(
+                    self._map_metadata.image_path_absolute, path
+                )
+                project_data.map_metadata = self._map_metadata
+            ProjectIO.save_project(project_data, path)
+            self._current_file_path = path
+            self.undo_stack.setClean()
+            self._update_title_bar()
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", str(e))
+            return False
+
+    def save_project(self) -> bool:
+        """Save to the current annotations path, deriving it automatically if needed."""
+        if self._current_file_path:
+            return self._do_save(self._current_file_path)
+        if self._3d_file_path:
+            folder = os.path.dirname(self._3d_file_path)
+            path = os.path.join(folder, "annotations.json")
+            return self._do_save(path)
+        return self.save_project_as()
+
+    def save_project_as(self) -> bool:
+        """Always open a file dialog to choose the save path."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Annotations As", "", "JSON Files (*.json)"
+        )
+        if path:
+            return self._do_save(path)
+        return False
+
+    def open_project(self) -> None:
+        """Open an annotations.json directly (entry point B).
+
+        Loads annotations then auto-restores the 3D data source from image_path.
+        """
+        if not self._confirm_discard_changes():
+            return
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open Annotations", "", "JSON Files (*.json)"
+        )
+        if not file_path:
+            return
+        from src.core.io import ProjectIO
+        try:
             project_data = ProjectIO.load_project(file_path)
-            # 2. Restore coordinate system
-            cs = project_data.coordinate_system
+        except Exception as e:
+            QMessageBox.critical(self, "Open Error", str(e))
+            return
+        # Restore coordinate system
+        cs = project_data.coordinate_system
+        self.coord_sys_widget.set_coordinate_system(cs)
+        self._apply_coordinate_system(cs)
+        # Clear dangling background pointer before scene.clear()
+        self.canvas_2d.background_item = None
+        # Populate canvas
+        self.canvas_2d.load_from_data(project_data)
+        # Set file path BEFORE _restore_data_source so _detect_annotations skips auto-detect
+        self._current_file_path = file_path
+        self.undo_stack.clear()
+        # Restore data source if present
+        if project_data.map_metadata is not None:
+            self._restore_data_source(project_data.map_metadata, file_path)
+            # BUG-003: ensure 2D background is visible immediately after restore.
+            # load_from_data() runs before the data source is restored, so the background
+            # created by load_data() may not have been rendered yet.
+            if self.processor._points is not None:
+                self._update_2d_slice()
+        else:
+            self._set_3d_controls_for_point_cloud()
+        # Sync loaded annotations to 3D viewer (not triggered by load_from_data itself).
+        self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+        self._update_title_bar()
+
+    def new_project(self) -> None:
+        """Clear everything and start a fresh project."""
+        if not self._confirm_discard_changes():
+            return
+        # Reset path fields BEFORE clearing undo stack so title is correct
+        self._current_file_path = None
+        self._3d_file_path = None
+        self._map_metadata = None
+        self._map_image_data = None
+        self._all_points_cache = None
+        self.undo_stack.clear()   # fires cleanChanged(True) → _on_dirty_changed
+        self.canvas_2d.background_item = None
+        self.canvas_2d.scene.clear()
+        self.canvas_2d._scene_initialized = False
+        # Reset processor so slicing is not attempted on stale data
+        self.processor._points = None
+        self.processor._colors = None
+        self.processor._bounds = None
+        self.processor._bounds_2d = None
+        self._set_3d_controls_for_point_cloud()
+        self._update_title_bar()
+
+    def closeEvent(self, event) -> None:
+        if self._confirm_discard_changes():
+            event.accept()
+        else:
+            event.ignore()
+
+    def _detect_annotations_for_3d_file(self, data_file_path: str) -> None:
+        """Auto-detect and load annotations.json in the same folder as *data_file_path*.
+
+        Skipped when _current_file_path is already set (e.g. coming from open_project).
+        Validates pairing by comparing the stored image_path basename with the loaded file.
+        """
+        if self._current_file_path is not None:
+            return
+        folder = os.path.dirname(data_file_path)
+        candidate = os.path.join(folder, "annotations.json")
+        if not os.path.exists(candidate):
+            return
+        from src.core.io import ProjectIO
+        try:
+            proj = ProjectIO.load_project(candidate)
+        except Exception:
+            return
+        if proj.map_metadata and proj.map_metadata.image_path:
+            stored_basename = os.path.basename(proj.map_metadata.image_path)
+            current_basename = os.path.basename(data_file_path)
+            if stored_basename != current_basename:
+                QMessageBox.warning(
+                    self, "Annotation Mismatch",
+                    f"annotations.json 이 다른 데이터({stored_basename})와 연결되어 있습니다.\n"
+                    f"자동으로 불러오지 않습니다."
+                )
+                return
+        # Pairing validated — load annotations into scene
+        self.canvas_2d.background_item = None
+        self.canvas_2d.load_from_data(proj)
+        if proj.coordinate_system:
+            cs = proj.coordinate_system
             self.coord_sys_widget.set_coordinate_system(cs)
             self._apply_coordinate_system(cs)
-            # 3. Clear dangling background pointer before scene.clear()
-            self.canvas_2d.background_item = None
-            # 4. Populate canvas
-            self.canvas_2d.load_from_data(project_data)
-            # 5. Restore data source if present, dispatching by file type (REQ-031)
-            if project_data.map_metadata is not None:
-                self._restore_data_source(project_data.map_metadata, file_path)
-            else:
-                # No data source saved — ensure 3D controls are fully enabled
-                self._set_3d_controls_for_point_cloud()
-            print(f"Project loaded from {file_path}")
+        self._current_file_path = candidate
+        self.undo_stack.setClean()
+        # BUG-003: restore 2D background after load_from_data() cleared the scene.
+        # background_item was set to None before load_from_data() (required to prevent
+        # segfault from stale C++ pixmap), so update_background() must be called again.
+        if self.processor._points is not None:
+            self._update_2d_slice()
+        # Sync loaded annotations to 3D viewer (not triggered by load_from_data itself).
+        self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+        self._update_title_bar()
 
     def create_controls(self):
         config = ConfigManager.instance()
@@ -449,6 +631,11 @@ class MainWindow(QMainWindow):
             meta.image_path_absolute = os.path.abspath(file_path)
             self._map_metadata = meta
 
+            # Auto-detect annotations.json in the same folder (FEAT-006)
+            self._3d_file_path = os.path.abspath(file_path)
+            self._detect_annotations_for_3d_file(self._3d_file_path)
+            self._update_title_bar()
+
     def on_slider_change(self, value):
         if not self.processor._points is None:
             min_z, max_z = self.processor.get_z_range()
@@ -514,11 +701,15 @@ class MainWindow(QMainWindow):
             self.geometry_visible_checkbox.setChecked(True)
 
     def load_point_cloud(self):
+        if not self._confirm_discard_changes():
+            return
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open 3D Data", "",
             "3D Data Files (*.ply *.pcd *.obj *.stl *.glb *.gltf);;All Files (*)"
         )
         if file_path:
+            self._current_file_path = None
+            self.undo_stack.clear()
             self.load_data(file_path)
 
     def on_undo_stack_changed(self):
@@ -558,29 +749,16 @@ class MainWindow(QMainWindow):
 
     def load_occupancy_grid(self):
         """Load a ROS2 occupancy grid map (YAML or image)."""
+        if not self._confirm_discard_changes():
+            return
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Load Occupancy Grid", "",
             "Map Files (*.yaml *.yml *.pgm *.png);;YAML Files (*.yaml *.yml);;Image Files (*.pgm *.png)"
         )
         if not file_path:
             return
-
-        # Warn if existing annotations (not just background pixmap)
-        from src.gui.items import RoomItem, EdgeItem, CustomPolygonItem, ObjectItem
-        annotation_types = (RoomItem, EdgeItem, CustomPolygonItem, ObjectItem)
-        has_annotations = any(
-            isinstance(item, annotation_types)
-            for item in self.canvas_2d.scene.items()
-        )
-        if has_annotations:
-            reply = QMessageBox.question(
-                self, "Load Occupancy Grid",
-                "Loading an occupancy grid will clear the current scene.\nContinue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
+        self._current_file_path = None
+        self.undo_stack.clear()
 
         ext = os.path.splitext(file_path)[1].lower()
         try:
@@ -733,6 +911,12 @@ class MainWindow(QMainWindow):
         self.geometry_visible_checkbox.setEnabled(True)
         self.geometry_visible_checkbox.setChecked(True)
         self._update_map_info(metadata, block_height)
+
+        # Auto-detect annotations.json in the same folder (FEAT-006)
+        if metadata.image_path_absolute:
+            self._3d_file_path = metadata.image_path_absolute
+            self._detect_annotations_for_3d_file(metadata.image_path_absolute)
+            self._update_title_bar()
 
     def _set_3d_controls_for_point_cloud(self):
         """Re-enable 3D controls for point cloud mode."""
