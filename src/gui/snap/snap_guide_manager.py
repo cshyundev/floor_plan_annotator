@@ -24,6 +24,8 @@ class SnapGuideManager:
         self._engine = SnapEngine()
         self._config = ConfigManager.instance()
         self._active_guides: list[QGraphicsLineItem] = []
+        self._guide_pool: list[QGraphicsLineItem] = []
+        self._guide_pool_used: int = 0
 
     def snap_drawing_point(
         self,
@@ -165,10 +167,10 @@ class SnapGuideManager:
         return best_snap
 
     def clear_guides(self):
-        """Remove all active guide lines from the scene."""
-        for item in self._active_guides:
-            if item.scene() is not None:
-                self._scene.removeItem(item)
+        """Hide all active guide lines (reused from pool, not removed from scene)."""
+        for i in range(self._guide_pool_used):
+            self._guide_pool[i].setVisible(False)
+        self._guide_pool_used = 0
         self._active_guides.clear()
 
     # ─── Internal helpers ────────────────────────────────────────────
@@ -234,19 +236,27 @@ class SnapGuideManager:
         return QPointF(rect.left(), rect.top()), QPointF(rect.right(), rect.bottom())
 
     def _show_guides(self, result: SnapResult):
-        """Create QGraphicsLineItems for each guide and add to scene."""
+        """Show guide lines, reusing pooled items to avoid per-frame allocation."""
         z_value = self._config.get_ui_value("snap", "guide_z_value")
 
-        for guide in result.guides:
+        for idx, guide in enumerate(result.guides):
+            if idx < len(self._guide_pool):
+                line_item = self._guide_pool[idx]
+            else:
+                line_item = QGraphicsLineItem()
+                line_item.setZValue(z_value)
+                self._scene.addItem(line_item)
+                self._guide_pool.append(line_item)
+
             color = self._get_guide_color(guide.guide_type)
             pen = QPen(color, 0)  # Cosmetic pen: always 1px regardless of zoom
             pen.setStyle(Qt.PenStyle.DashLine)
-
-            line_item = QGraphicsLineItem(QLineF(guide.start, guide.end))
             line_item.setPen(pen)
-            line_item.setZValue(z_value)
-            self._scene.addItem(line_item)
+            line_item.setLine(QLineF(guide.start, guide.end))
+            line_item.setVisible(True)
             self._active_guides.append(line_item)
+
+        self._guide_pool_used = len(result.guides)
 
     def _get_guide_color(self, guide_type: str) -> QColor:
         """Get guide line color based on type."""

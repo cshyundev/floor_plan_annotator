@@ -58,13 +58,29 @@ class MoveNodesCommand(QUndoCommand):
         self.old_positions = old_positions
         self.new_positions = new_positions
 
-    def undo(self):
+    def _batch_set_positions(self, positions):
+        """Set positions with batch update to avoid redundant update_shape calls."""
+        # Collect unique polygons from all affected nodes
+        polys = set()
+        for node in self.nodes:
+            for poly in node.polygons:
+                polys.add(poly)
+        # Enable batch mode
+        for poly in polys:
+            poly._batch_updating = True
+        # Move all nodes
         for i, node in enumerate(self.nodes):
-            node.setPos(self.old_positions[i])
+            node.setPos(positions[i])
+        # Disable batch mode and update once per polygon
+        for poly in polys:
+            poly._batch_updating = False
+            poly.update_shape()
+
+    def undo(self):
+        self._batch_set_positions(self.old_positions)
 
     def redo(self):
-        for i, node in enumerate(self.nodes):
-            node.setPos(self.new_positions[i])
+        self._batch_set_positions(self.new_positions)
 
 class ChangeCustomPolygonTypeCommand(QUndoCommand):
     def __init__(self, polygon_item, old_type, new_type):

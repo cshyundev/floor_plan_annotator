@@ -27,6 +27,7 @@ class PolygonItem(QGraphicsPathItem):
         self._rotating = False
         self._initial_node_positions = []
         self._initial_angle = 0.0
+        self._batch_updating = False
 
         for n in self.nodes:
             n.add_polygon(self)
@@ -225,6 +226,7 @@ class PolygonItem(QGraphicsPathItem):
             cos_a = math.cos(angle_diff)
             sin_a = math.sin(angle_diff)
 
+            self._batch_updating = True
             for i, node in enumerate(self.nodes):
                 orig_pos = self._initial_node_positions[i]
                 dx = orig_pos.x() - self._centroid.x()
@@ -233,14 +235,19 @@ class PolygonItem(QGraphicsPathItem):
                 nx = self._centroid.x() + dx * cos_a - dy * sin_a
                 ny = self._centroid.y() + dx * sin_a + dy * cos_a
                 node.setPos(nx, ny)
+            self._batch_updating = False
+            self.update_shape()
 
             event.accept()
 
         elif self._dragging:
             delta = event.scenePos() - self._drag_start_pos
+            self._batch_updating = True
             for i, node in enumerate(self.nodes):
                 orig_pos = self._initial_node_positions[i]
                 node.setPos(orig_pos + delta)
+            self._batch_updating = False
+            self.update_shape()
             # Show alignment guides for centroid position during drag
             if self.scene():
                 views = self.scene().views()

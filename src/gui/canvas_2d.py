@@ -53,6 +53,10 @@ class Canvas2D(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
+        # Performance: minimize viewport redraws and cache background
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
+        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
+
         # Canvas background color from config
         config = ConfigManager.instance()
         canvas_bg = config.get_color("canvas", "background")
@@ -222,6 +226,7 @@ class Canvas2D(QGraphicsView):
         )
 
         self.scene.addItem(self.background_item)
+        self.resetCachedContent()
 
         # Only set scene rect and fit view on first load; preserve zoom/pan on subsequent slices
         if not self._scene_initialized:

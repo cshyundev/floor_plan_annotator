@@ -1,5 +1,6 @@
 # Changelog Index
 
+- 2026-02-27 [Changed] 2D Canvas interaction performance optimization: batch polygon drag updates, snap guide object pooling, Qt viewport caching, ObjectItem trig caching, redundant prepareGeometryChange removal ([detail](2026-02-27-canvas-drag-performance.md))
 - 2026-02-26 [Added] Object 3D Properties: per-type default elevation/height, per-instance override via Properties Panel and Ctrl+Wheel, wireframe rendering in 3D viewer (FEAT-005, REQ-025)
 - 2026-02-26 [Fixed] Reset UI state on data load: re-enable slicing controls when loading 3D data after occupancy grid, clear stale projection cache when loading occupancy grid (BUG-001)
 - 2026-02-26 [Changed] Updated status/index.md with BUG-001, IMP-002, IMP-003 entries

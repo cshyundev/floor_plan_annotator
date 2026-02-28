@@ -82,12 +82,17 @@ class NodeItem(QGraphicsEllipseItem):
             for edge in self.edges:
                 edge.update_line()
             for poly in self.polygons:
-                poly.update_shape()
-            # Show alignment guides during drag
+                if not getattr(poly, '_batch_updating', False):
+                    poly.update_shape()
+            # Show alignment guides during drag (skip during polygon batch update)
             if self._drag_start_pos is not None and self.scene():
-                views = self.scene().views()
-                if views and hasattr(views[0], 'snap_manager'):
-                    views[0].snap_manager.snap_drag_point(value, exclude_items=[self])
+                batch_active = any(
+                    getattr(p, '_batch_updating', False) for p in self.polygons
+                )
+                if not batch_active:
+                    views = self.scene().views()
+                    if views and hasattr(views[0], 'snap_manager'):
+                        views[0].snap_manager.snap_drag_point(value, exclude_items=[self])
         return super().itemChange(change, value)
 
     def _get_neighbor_node(self, edge):

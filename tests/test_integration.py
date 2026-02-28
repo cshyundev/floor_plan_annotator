@@ -36,9 +36,11 @@ class TestIntegration(unittest.TestCase):
         )
 
     def _annotation_items(self):
-        """Return scene items excluding background."""
+        """Return annotation items (excluding background and internal items like snap guides)."""
+        from src.gui.items import RoomItem, CustomPolygonItem, ObjectItem
+        VALID = (NodeItem, EdgeItem, RoomItem, CustomPolygonItem, ObjectItem)
         return [i for i in self.canvas.scene.items()
-                if i != self.canvas.background_item]
+                if isinstance(i, VALID)]
 
     def test_draw_wall_flow(self):
         # 1. Select Wall Tool

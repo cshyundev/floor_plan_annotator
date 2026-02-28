@@ -41,6 +41,8 @@ class ObjectItem(QGraphicsPolygonItem):
         self._initial_angle = None
         self._handle_size = config.get_ui_value("object", "handle_size")
         self._rot_handle_offset = config.get_ui_value("object", "rotation_handle_offset")
+        self._cached_corners: list[QPointF] | None = None
+        self._cached_rot_handle_pos: QPointF | None = None
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
@@ -85,10 +87,21 @@ class ObjectItem(QGraphicsPolygonItem):
         return QPointF(cx + rx, cy + ry)
 
     def update_shape(self):
-        corners = self._compute_corners()
-        polygon = QPolygonF(corners)
+        self._cached_corners = self._compute_corners()
+        self._cached_rot_handle_pos = self._rotation_handle_pos()
+        polygon = QPolygonF(self._cached_corners)
         self.setPolygon(polygon)
         self._update_label_pos()
+
+    def _get_corners(self):
+        if self._cached_corners is None:
+            self._cached_corners = self._compute_corners()
+        return self._cached_corners
+
+    def _get_rotation_handle_pos(self):
+        if self._cached_rot_handle_pos is None:
+            self._cached_rot_handle_pos = self._rotation_handle_pos()
+        return self._cached_rot_handle_pos
 
     def _update_label_pos(self):
         rect = self.label.boundingRect()
@@ -102,7 +115,7 @@ class ObjectItem(QGraphicsPolygonItem):
         hs = self._handle_size
         # Extend for corner handle padding and rotation handle
         extended = base.adjusted(-hs, -hs, hs, hs)
-        rh = self._rotation_handle_pos()
+        rh = self._get_rotation_handle_pos()
         rh_rect = QRectF(rh.x() - hs, rh.y() - hs, hs * 2, hs * 2)
         return extended.united(rh_rect)
 
@@ -110,7 +123,7 @@ class ObjectItem(QGraphicsPolygonItem):
         path = super().shape()
         hs = self._handle_size
         # Include rotation handle area so hover/click events reach the item there
-        rh = self._rotation_handle_pos()
+        rh = self._get_rotation_handle_pos()
         path.addEllipse(QRectF(rh.x() - hs, rh.y() - hs, hs * 2, hs * 2))
         return path
 
@@ -194,12 +207,12 @@ class ObjectItem(QGraphicsPolygonItem):
             # Draw corner handles
             painter.setBrush(QBrush(self._paint_corner_fill))
             painter.setPen(QPen(self._paint_corner_outline, thin))
-            for corner in self._compute_corners():
+            for corner in self._get_corners():
                 painter.drawRect(QRectF(corner.x() - hs/2, corner.y() - hs/2, hs, hs))
 
             # Draw rotation handle (1.5x bigger than corner handles)
             rhs = hs * 1.5
-            rh_pos = self._rotation_handle_pos()
+            rh_pos = self._get_rotation_handle_pos()
             painter.setBrush(QBrush(self._paint_rot_fill))
             painter.setPen(QPen(self._paint_rot_outline, thin))
             painter.drawEllipse(QRectF(rh_pos.x() - rhs/2, rh_pos.y() - rhs/2, rhs, rhs))
@@ -211,7 +224,7 @@ class ObjectItem(QGraphicsPolygonItem):
     def _hit_test_corner(self, scene_pos):
         """Return index of corner handle hit, or None."""
         hs = self._handle_size
-        for i, corner in enumerate(self._compute_corners()):
+        for i, corner in enumerate(self._get_corners()):
             if abs(scene_pos.x() - corner.x()) < hs and abs(scene_pos.y() - corner.y()) < hs:
                 return i
         return None
@@ -219,7 +232,7 @@ class ObjectItem(QGraphicsPolygonItem):
     def _hit_test_rotation_handle(self, scene_pos):
         """Return True if rotation handle is hit."""
         hs = self._handle_size
-        rh = self._rotation_handle_pos()
+        rh = self._get_rotation_handle_pos()
         return abs(scene_pos.x() - rh.x()) < hs and abs(scene_pos.y() - rh.y()) < hs
 
     def hoverEnterEvent(self, event):
@@ -295,7 +308,6 @@ class ObjectItem(QGraphicsPolygonItem):
         scene_pos = event.scenePos()
 
         if self._rotating:
-            self.prepareGeometryChange()
             delta = scene_pos - self.center
             raw_angle = math.degrees(math.atan2(delta.y(), delta.x())) + 90
             if self.scene():
@@ -309,7 +321,7 @@ class ObjectItem(QGraphicsPolygonItem):
             event.accept()
 
         elif self._resizing and self._resize_corner_idx is not None:
-            corners = self._compute_corners()
+            corners = self._get_corners()
             # Opposite corner is fixed
             opp_idx = (self._resize_corner_idx + 2) % 4
             opp_corner = corners[opp_idx]
@@ -329,7 +341,6 @@ class ObjectItem(QGraphicsPolygonItem):
             new_w = max(0.01, abs(local_x) * 2)
             new_h = max(0.01, abs(local_y) * 2)
 
-            self.prepareGeometryChange()
             self.center = new_center
             self.width = new_w
             self.height = new_h
@@ -337,7 +348,6 @@ class ObjectItem(QGraphicsPolygonItem):
             event.accept()
 
         elif self._drag_start_pos is not None:
-            self.prepareGeometryChange()
             delta = scene_pos - self._drag_start_pos
             self.center = self._drag_start_center + delta
             self.update_shape()
