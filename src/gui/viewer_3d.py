@@ -172,20 +172,30 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
         Creates both full-resolution and downsampled copies. The downsampled
         version is used for fast preview during slider drag (IMP-002).
 
-        Note: Gracefully handles renderer failure by loading geometry but not displaying.
-        """
-        if self._renderer_failed:
-            print("Warning: Viewer3D renderer failed, cannot load geometry")
-            return
+        Supported formats:
+        - Point clouds: .ply, .pcd
+        - Meshes (vertex colors): .ply, .obj, .stl
+        - Meshes (UV textures baked to vertex colors): .glb, .gltf  (REQ-031)
 
+        Note: Geometry loading proceeds even when the 3D renderer has failed, so
+        that the 2D canvas projection remains functional. _setup_geometry() guards
+        renderer access internally.
+        """
         try:
-            # Load Mesh or Point Cloud
-            geom = o3d.io.read_point_cloud(file_path)
-            if geom.is_empty():
-                geom = o3d.io.read_triangle_mesh(file_path)
-                geom.compute_vertex_normals()
-                if not geom.has_vertex_colors():
-                    geom.paint_uniform_color([0.7, 0.7, 0.7])
+            from pathlib import Path
+            ext = Path(file_path).suffix.lower()
+
+            if ext in ('.glb', '.gltf'):
+                # GLB/GLTF: load via trimesh, bake UV texture → vertex colors (REQ-031)
+                geom = self._load_gltf(file_path)
+            else:
+                # Point cloud or mesh via Open3D
+                geom = o3d.io.read_point_cloud(file_path)
+                if geom.is_empty():
+                    geom = o3d.io.read_triangle_mesh(file_path)
+                    geom.compute_vertex_normals()
+                    if not geom.has_vertex_colors():
+                        geom.paint_uniform_color([0.7, 0.7, 0.7])
 
             self.original_geometry = geom
 
@@ -207,7 +217,48 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
 
             self._setup_geometry()
         except Exception as e:
+            import traceback
             print(f"Warning: load_geometry failed: {e}")
+            traceback.print_exc()
+
+    def _load_gltf(self, file_path: str) -> 'o3d.geometry.TriangleMesh':
+        """Load a GLB or GLTF file, baking UV textures into vertex colors.
+
+        Uses trimesh for loading and texture baking, then converts to an
+        Open3D TriangleMesh so the rest of the pipeline is unchanged.
+        """
+        import trimesh
+
+        loaded = trimesh.load(file_path)
+        if isinstance(loaded, trimesh.Scene):
+            # dump() applies each node's global transform before concatenation,
+            # unlike geometry.values() which returns local-coordinate geometry.
+            meshes = [m for m in loaded.dump() if isinstance(m, trimesh.Trimesh)]
+            if not meshes:
+                raise ValueError(f"No triangle meshes found in {file_path}")
+            loaded = trimesh.util.concatenate(meshes)
+        elif not isinstance(loaded, trimesh.Trimesh):
+            raise ValueError(f"Unexpected trimesh object type: {type(loaded)}")
+
+        # Bake UV-mapped texture → per-vertex RGBA colors
+        if hasattr(loaded.visual, 'to_color'):
+            loaded.visual = loaded.visual.to_color()
+
+        vertices = np.asarray(loaded.vertices, dtype=np.float64)
+        faces = np.asarray(loaded.faces, dtype=np.int32)
+
+        vc = loaded.visual.vertex_colors
+        if vc is not None and len(vc) == len(vertices):
+            colors = np.asarray(vc, dtype=np.uint8)[:, :3] / 255.0
+        else:
+            colors = np.full((len(vertices), 3), 0.7)
+
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.vertex_colors = o3d.utility.Vector3dVector(np.clip(colors, 0.0, 1.0))
+        mesh.compute_vertex_normals()
+        return mesh
 
     def set_geometry(self, geometry):
         """Set pre-created geometry directly (no file loading).

@@ -170,11 +170,11 @@ class MainWindow(QMainWindow):
             self.canvas_2d.background_item = None
             # 4. Populate canvas
             self.canvas_2d.load_from_data(project_data)
-            # 5. Restore occupancy grid if present
+            # 5. Restore data source if present, dispatching by file type (REQ-031)
             if project_data.map_metadata is not None:
-                self._restore_occupancy_grid(project_data.map_metadata, file_path)
+                self._restore_data_source(project_data.map_metadata, file_path)
             else:
-                # Point cloud mode — ensure 3D controls are fully enabled
+                # No data source saved — ensure 3D controls are fully enabled
                 self._set_3d_controls_for_point_cloud()
             print(f"Project loaded from {file_path}")
 
@@ -380,7 +380,7 @@ class MainWindow(QMainWindow):
         self.canvas_2d.status_message.connect(self.statusBar().showMessage)
 
         # Auto-load dummy data for development
-        dummy_paths = ["data/layout_dummy.ply", "layout_dummy.ply"]
+        dummy_paths = ["data/point_cloud/layout_dummy.ply", "data/layout_dummy.ply", "layout_dummy.ply"]
         target_path = None
         for p in dummy_paths:
             if os.path.exists(p):
@@ -418,7 +418,11 @@ class MainWindow(QMainWindow):
         self._type_editor_dialog.exec()
 
     def load_data(self, file_path):
-        """Load 3D data from file."""
+        """Load 3D data from file (point cloud or mesh, including GLB/GLTF).
+
+        Also records the file path in _map_metadata so it is preserved
+        in the project JSON and can be restored on next open (REQ-031).
+        """
         # Reset UI state (e.g. re-enable slicing controls disabled by occupancy grid)
         self._set_3d_controls_for_point_cloud()
 
@@ -427,16 +431,23 @@ class MainWindow(QMainWindow):
         self._apply_coordinate_system(cs)
 
         self.viewer_3d.load_geometry(file_path)
-        if self.viewer_3d.geometry:
-            self.processor.load_data(self.viewer_3d.geometry)
+        if self.viewer_3d.original_geometry:
+            self.processor.load_data(self.viewer_3d.original_geometry)
             self._all_points_cache = None
             self.canvas_2d._scene_initialized = False
 
             # Initialize annotation sync system
-            self.annotation_sync.initialize_geometry(self.viewer_3d.geometry)
+            self.annotation_sync.initialize_geometry(self.viewer_3d.original_geometry)
 
             self.z_slider.setValue(50)
             self.on_slider_change(50)
+
+            # Track data source path for project save/restore (REQ-031)
+            from src.model.data import MapMetadata
+            meta = MapMetadata()
+            meta.image_path = os.path.basename(file_path)
+            meta.image_path_absolute = os.path.abspath(file_path)
+            self._map_metadata = meta
 
     def on_slider_change(self, value):
         if not self.processor._points is None:
@@ -504,7 +515,8 @@ class MainWindow(QMainWindow):
 
     def load_point_cloud(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Point Cloud", "", "Point Cloud Files (*.ply *.pcd *.obj *.stl)"
+            self, "Open 3D Data", "",
+            "3D Data Files (*.ply *.pcd *.obj *.stl *.glb *.gltf);;All Files (*)"
         )
         if file_path:
             self.load_data(file_path)
@@ -610,6 +622,53 @@ class MainWindow(QMainWindow):
         self._all_points_cache = None
         # Setup display
         self._setup_occupancy_grid_display(image_data, metadata, bounds, scale)
+
+    # File extensions treated as 3D data (point cloud / mesh), not occupancy grid
+    _3D_EXTENSIONS = frozenset({'.ply', '.pcd', '.obj', '.stl', '.glb', '.gltf'})
+
+    def _restore_data_source(self, metadata, project_path):
+        """Dispatch data-source restoration by file extension (REQ-031).
+
+        Occupancy grid images (.pgm, .png + yaml metadata) → _restore_occupancy_grid()
+        3D data files (.ply, .pcd, .obj, .stl, .glb, .gltf) → _restore_3d_data()
+        """
+        from pathlib import Path
+        ext = Path(metadata.image_path).suffix.lower()
+        if ext in self._3D_EXTENSIONS:
+            self._restore_3d_data(metadata, project_path)
+        else:
+            self._restore_occupancy_grid(metadata, project_path)
+
+    def _restore_3d_data(self, metadata, project_path):
+        """Restore a PLY/GLB/GLTF/OBJ data source saved in project metadata.
+
+        Resolves data path: relative → absolute → user selection fallback.
+        """
+        from pathlib import Path
+        project_dir = os.path.dirname(os.path.abspath(project_path))
+
+        data_path = None
+        rel_candidate = os.path.normpath(os.path.join(project_dir, metadata.image_path))
+        if metadata.image_path and os.path.exists(rel_candidate):
+            data_path = rel_candidate
+        elif metadata.image_path_absolute and os.path.exists(metadata.image_path_absolute):
+            data_path = metadata.image_path_absolute
+        else:
+            data_path, _ = QFileDialog.getOpenFileName(
+                self, "Locate 3D Data File",
+                project_dir,
+                "3D Data Files (*.ply *.pcd *.obj *.stl *.glb *.gltf);;All Files (*)"
+            )
+            if not data_path:
+                print("3D data file not found — skipping data source restoration")
+                self._set_3d_controls_for_point_cloud()
+                return
+
+        # Update metadata with resolved absolute path before load_data() overwrites it
+        metadata.image_path_absolute = os.path.abspath(data_path)
+        self.load_data(data_path)
+        # Restore original relative image_path (load_data sets only basename)
+        self._map_metadata.image_path = metadata.image_path
 
     def _restore_occupancy_grid(self, metadata, project_path):
         """Restore occupancy grid from saved project metadata.
