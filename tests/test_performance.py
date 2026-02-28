@@ -1,5 +1,5 @@
 """
-Performance benchmark tests for 2D canvas drag operations.
+Performance benchmark tests for 2D canvas drag and selection operations.
 
 Run: QT_QPA_PLATFORM=offscreen python3 -m pytest tests/test_performance.py -v -s
 """
@@ -220,3 +220,274 @@ class TestPerformanceBaseline:
         print(f"\nSnap collection: {elapsed*1000:.1f}ms for 100 calls ({total_items} scene items)")
         print(f"  Per call: {elapsed*10:.2f}ms")
         assert elapsed < 5.0, f"Snap collection too slow: {elapsed:.2f}s"
+
+
+class TestSelectionPerformance:
+    """Benchmark tests to measure selection, click, and hover performance."""
+
+    def test_scene_items_query(self, canvas):
+        """Measure raw scene.items(pos) BSP tree query time."""
+        _populate_scene(canvas)
+
+        total_items = len(canvas.scene.items())
+
+        # Position overlapping items (room area)
+        test_pos = QPointF(1.0, 1.0)
+        canvas.scene.items(test_pos)  # warm up
+
+        N = 1000
+        start = time.perf_counter()
+        for _ in range(N):
+            canvas.scene.items(test_pos)
+        elapsed = time.perf_counter() - start
+
+        per_call_us = (elapsed / N) * 1_000_000
+
+        # Empty position (no items)
+        empty_pos = QPointF(18.0, 18.0)
+        start = time.perf_counter()
+        for _ in range(N):
+            canvas.scene.items(empty_pos)
+        elapsed_empty = time.perf_counter() - start
+
+        per_empty_us = (elapsed_empty / N) * 1_000_000
+
+        print(f"\nscene.items(pos) — {total_items} total scene items:")
+        print(f"  With items:  {per_call_us:.1f}us/call")
+        print(f"  Empty area:  {per_empty_us:.1f}us/call")
+        assert per_call_us < 100, f"scene.items(pos) too slow: {per_call_us:.1f}us"
+
+    def test_select_tool_click(self, canvas):
+        """Measure full SelectTool.on_mouse_press path."""
+        _populate_scene(canvas)
+        canvas.set_tool("select")
+        tool = canvas.tool_manager.select_tool
+
+        # Click on room polygon area
+        ctx = make_context(1.0, 1.0)
+
+        N = 500
+        start = time.perf_counter()
+        for _ in range(N):
+            tool.on_mouse_press(ctx)
+        elapsed = time.perf_counter() - start
+
+        per_call_us = (elapsed / N) * 1_000_000
+
+        # Click on empty area (clearSelection path)
+        ctx_empty = make_context(18.0, 18.0)
+        start = time.perf_counter()
+        for _ in range(N):
+            tool.on_mouse_press(ctx_empty)
+        elapsed_empty = time.perf_counter() - start
+
+        per_empty_us = (elapsed_empty / N) * 1_000_000
+
+        print(f"\nSelectTool.on_mouse_press:")
+        print(f"  On item:    {per_call_us:.1f}us/call")
+        print(f"  Empty area: {per_empty_us:.1f}us/call")
+        assert per_call_us < 500, f"Selection click too slow: {per_call_us:.1f}us"
+
+    def test_guide_pool_bsp_impact(self, canvas):
+        """Measure scene.items(pos) overhead from snap guide pool items in BSP tree."""
+        _populate_scene(canvas)
+
+        test_pos = QPointF(1.0, 1.0)
+        N = 1000
+
+        # Baseline: no guide pool items
+        pool_before = len(canvas.snap_manager._guide_pool)
+        canvas.scene.items(test_pos)  # warm up
+
+        start = time.perf_counter()
+        for _ in range(N):
+            canvas.scene.items(test_pos)
+        elapsed_without = time.perf_counter() - start
+
+        # Create guide pool items by triggering snap_drag_point
+        for i in range(10):
+            canvas.snap_manager.snap_drag_point(QPointF(i * 0.5, i * 0.5))
+        canvas.snap_manager.clear_guides()  # hide but keep in scene
+
+        pool_after = len(canvas.snap_manager._guide_pool)
+        total_items = len(canvas.scene.items())
+
+        start = time.perf_counter()
+        for _ in range(N):
+            canvas.scene.items(test_pos)
+        elapsed_with = time.perf_counter() - start
+
+        overhead_pct = ((elapsed_with - elapsed_without) / elapsed_without) * 100 if elapsed_without > 0 else 0
+
+        print(f"\nGuide pool BSP impact:")
+        print(f"  Pool items: {pool_before} -> {pool_after}")
+        print(f"  Without pool: {elapsed_without*1000:.2f}ms ({N} queries)")
+        print(f"  With pool:    {elapsed_with*1000:.2f}ms ({N} queries)")
+        print(f"  Overhead:     {overhead_pct:+.1f}%")
+        print(f"  Total scene items: {total_items}")
+        assert overhead_pct < 20, f"Guide pool BSP overhead too high: {overhead_pct:.1f}%"
+
+    def test_hover_find_nearest_edge(self, canvas):
+        """Measure _find_nearest_edge cost during polygon hover."""
+        _populate_scene(canvas)
+
+        rooms = [i for i in canvas.scene.items() if isinstance(i, RoomItem)]
+        assert rooms, "No rooms found"
+        room = rooms[0]
+
+        hover_pos = QPointF(room._centroid.x() + 0.1, room._centroid.y())
+
+        N = 5000
+        start = time.perf_counter()
+        for _ in range(N):
+            room._find_nearest_edge(hover_pos)
+        elapsed = time.perf_counter() - start
+
+        per_call_us = (elapsed / N) * 1_000_000
+        print(f"\n_find_nearest_edge ({len(room.nodes)} nodes): {per_call_us:.2f}us/call")
+        assert per_call_us < 50, f"_find_nearest_edge too slow: {per_call_us:.2f}us"
+
+    def test_is_drawing_tool_active(self, canvas):
+        """Measure _is_drawing_tool_active per-item guard overhead."""
+        _populate_scene(canvas)
+        canvas.set_tool("select")
+
+        rooms = [i for i in canvas.scene.items() if isinstance(i, RoomItem)]
+        objects = [i for i in canvas.scene.items() if isinstance(i, ObjectItem)]
+        room = rooms[0]
+        obj = objects[0]
+
+        N = 5000
+        start = time.perf_counter()
+        for _ in range(N):
+            room._is_drawing_tool_active()
+        elapsed_poly = time.perf_counter() - start
+
+        start = time.perf_counter()
+        for _ in range(N):
+            obj._is_drawing_tool_active()
+        elapsed_obj = time.perf_counter() - start
+
+        poly_us = (elapsed_poly / N) * 1_000_000
+        obj_us = (elapsed_obj / N) * 1_000_000
+
+        print(f"\n_is_drawing_tool_active:")
+        print(f"  PolygonItem: {poly_us:.2f}us/call")
+        print(f"  ObjectItem:  {obj_us:.2f}us/call")
+        assert poly_us < 20, f"_is_drawing_tool_active (polygon) too slow: {poly_us:.2f}us"
+        assert obj_us < 20, f"_is_drawing_tool_active (object) too slow: {obj_us:.2f}us"
+
+    def test_hit_testing_shape(self, canvas):
+        """Measure shape()/boundingRect() cost for hit testing."""
+        _populate_scene(canvas)
+
+        objects = [i for i in canvas.scene.items() if isinstance(i, ObjectItem)]
+        rooms = [i for i in canvas.scene.items() if isinstance(i, RoomItem)]
+        obj = objects[0]
+        room = rooms[0]
+
+        N = 5000
+
+        start = time.perf_counter()
+        for _ in range(N):
+            obj.shape()
+        elapsed_obj_shape = time.perf_counter() - start
+
+        start = time.perf_counter()
+        for _ in range(N):
+            obj.boundingRect()
+        elapsed_obj_br = time.perf_counter() - start
+
+        start = time.perf_counter()
+        for _ in range(N):
+            room.shape()
+        elapsed_room_shape = time.perf_counter() - start
+
+        obj_shape_us = (elapsed_obj_shape / N) * 1_000_000
+        obj_br_us = (elapsed_obj_br / N) * 1_000_000
+        room_shape_us = (elapsed_room_shape / N) * 1_000_000
+
+        print(f"\nHit testing:")
+        print(f"  ObjectItem.shape():        {obj_shape_us:.2f}us/call")
+        print(f"  ObjectItem.boundingRect():  {obj_br_us:.2f}us/call")
+        print(f"  RoomItem.shape():          {room_shape_us:.2f}us/call")
+        assert obj_shape_us < 50, f"ObjectItem.shape() too slow: {obj_shape_us:.2f}us"
+
+    def test_cycle_detection_overlapping(self, canvas):
+        """Measure click performance with multiple overlapping items."""
+        # Create overlapping items at the same position
+        for _ in range(5):
+            _draw_room(canvas, [
+                (1.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0)
+            ])
+        for _ in range(3):
+            _draw_object(canvas, 1.5, 1.5, 2.5, 2.5)
+
+        canvas.set_tool("select")
+        tool = canvas.tool_manager.select_tool
+
+        ctx = make_context(2.0, 2.0)
+        items_at_pos = len(canvas.scene.items(QPointF(2.0, 2.0)))
+
+        N = 500
+        start = time.perf_counter()
+        for _ in range(N):
+            tool.on_mouse_press(ctx)
+        elapsed = time.perf_counter() - start
+
+        per_call_us = (elapsed / N) * 1_000_000
+
+        print(f"\nCycle detection ({items_at_pos} items at pos):")
+        print(f"  Per click: {per_call_us:.1f}us/call")
+        assert per_call_us < 1000, f"Cycle click too slow: {per_call_us:.1f}us"
+
+    def test_filter_rubberband_selection(self, canvas):
+        """Measure _filter_rubberband_selection cost (called on every mouseRelease)."""
+        _populate_scene(canvas)
+
+        # Select a few items
+        rooms = [i for i in canvas.scene.items() if isinstance(i, RoomItem)]
+        for r in rooms[:3]:
+            r.setSelected(True)
+
+        N = 2000
+        start = time.perf_counter()
+        for _ in range(N):
+            canvas._filter_rubberband_selection()
+        elapsed = time.perf_counter() - start
+
+        per_call_us = (elapsed / N) * 1_000_000
+        print(f"\n_filter_rubberband_selection: {per_call_us:.2f}us/call")
+        assert per_call_us < 50, f"Rubberband filter too slow: {per_call_us:.2f}us"
+
+    def test_edge_paint_set_pen(self, canvas):
+        """Measure EdgeItem.paint per-frame state check and setPen overhead."""
+        _populate_scene(canvas)
+
+        edges = [i for i in canvas.scene.items() if isinstance(i, EdgeItem)]
+        assert edges, "No edges found"
+        edge = edges[0]
+
+        N = 5000
+
+        # State check cost
+        start = time.perf_counter()
+        for _ in range(N):
+            edge.isSelected()
+            edge.isUnderMouse()
+        elapsed_check = time.perf_counter() - start
+
+        # setPen cost
+        pen = edge.pen_default
+        start = time.perf_counter()
+        for _ in range(N):
+            edge.setPen(pen)
+        elapsed_pen = time.perf_counter() - start
+
+        check_us = (elapsed_check / N) * 1_000_000
+        pen_us = (elapsed_pen / N) * 1_000_000
+
+        print(f"\nEdgeItem paint overhead:")
+        print(f"  State checks (isSelected+isUnderMouse): {check_us:.2f}us/frame")
+        print(f"  setPen():                                {pen_us:.2f}us/frame")
+        assert check_us < 10, f"State check too slow: {check_us:.2f}us"
