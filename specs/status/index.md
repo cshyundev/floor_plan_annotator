@@ -82,7 +82,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| IMP-004 | "Load Point Cloud" 메뉴 명칭 부정확 | main_window, strings.yaml | P1 | REQ-031 | GLB/GLTF 등도 지원하게 됐으나 메뉴에 여전히 "Load Point Cloud" 표시됨 |
+| *(없음)* | | | | | |
 
 ### Improvement
 
