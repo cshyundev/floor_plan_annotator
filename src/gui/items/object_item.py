@@ -308,6 +308,7 @@ class ObjectItem(QGraphicsPolygonItem):
         scene_pos = event.scenePos()
 
         if self._rotating:
+            self.prepareGeometryChange()
             delta = scene_pos - self.center
             raw_angle = math.degrees(math.atan2(delta.y(), delta.x())) + 90
             if self.scene():
@@ -341,6 +342,7 @@ class ObjectItem(QGraphicsPolygonItem):
             new_w = max(0.01, abs(local_x) * 2)
             new_h = max(0.01, abs(local_y) * 2)
 
+            self.prepareGeometryChange()
             self.center = new_center
             self.width = new_w
             self.height = new_h
@@ -348,6 +350,7 @@ class ObjectItem(QGraphicsPolygonItem):
             event.accept()
 
         elif self._drag_start_pos is not None:
+            self.prepareGeometryChange()
             delta = scene_pos - self._drag_start_pos
             self.center = self._drag_start_center + delta
             self.update_shape()
