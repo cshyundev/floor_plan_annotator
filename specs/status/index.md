@@ -56,6 +56,13 @@
 - Smart orphan detection on deletion preserves shared nodes
 - Boundary edge tagging for correct load/delete behavior
 
+### GLB/GLTF Mesh Support (REQ-031) (2026-02-28)
+- trimesh-based GLB/GLTF loading with UV-texture-to-vertex-color baking
+- Height slicing and 2D color projection work with mesh data (BUG-002 fixed)
+- scene.dump() for correct multi-node transform handling
+- Dense tessellation sample data (0.05 m grid) for reliable slice testing
+- Renderer-independent geometry loading: 2D canvas works even if 3D renderer fails
+
 ### Object 3D Properties (FEAT-005) (2026-02-26)
 - Per-type default elevation and 3D height in `objects.yaml` (REQ-025)
 - Per-instance override via Properties Panel spinboxes
@@ -75,7 +82,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| *(없음)* | | | | | |
+| IMP-004 | "Load Point Cloud" 메뉴 명칭 부정확 | main_window, strings.yaml | P1 | REQ-031 | GLB/GLTF 등도 지원하게 됐으나 메뉴에 여전히 "Load Point Cloud" 표시됨 |
 
 ### Improvement
 
@@ -87,6 +94,11 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
+| FEAT-006 | Project Lifecycle Management | main_window, io | P0 | REQ-026 | New/Save/SaveAs, dirty 추적, 타이틀바, 종료 경고 |
+| FEAT-007 | Recent Files | main_window | P1 | REQ-027 | QSettings, 최근 5개, Clear 기능 |
+| FEAT-008 | Project JSON Schema v4.0 | model/data, core/io | P1 | REQ-028 | project_name, 타임스탬프 추가, image_path_absolute 제거 |
+| FEAT-009 | Auto-save Recovery | main_window, core/io | P2 | REQ-029 | 5분 주기 자동 저장, 크래시 복구 |
+| FEAT-010 | Project Folder Structure Convention | 문서/컨벤션 | P0 | REQ-030 | 1폴더=1맵+1JSON, 상대경로, 다층은 별도 폴더 |
 | *(없음)* | | | | | |
 
 ## In Progress
