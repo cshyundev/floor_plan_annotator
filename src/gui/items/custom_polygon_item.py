@@ -11,7 +11,7 @@ class CustomPolygonItem(PolygonItem):
     annotation_type = "custom_polygon"
     _config_section = "custom_polygon"
 
-    def __init__(self, nodes: list, polygon_type: str = "clean_zone", polygon_id: str = ""):
+    def __init__(self, nodes: list, polygon_type: str = "Clean Zone", polygon_id: str = ""):
         self.polygon_type = polygon_type
         self.polygon_id = polygon_id
         super().__init__(nodes)
@@ -37,11 +37,8 @@ class CustomPolygonItem(PolygonItem):
         self.setZValue(config.get_ui_value("custom_polygon", "z_value"))
 
     def get_label_text(self) -> str:
-        config = ConfigManager.instance()
-        type_conf = config.get_custom_polygon_type(self.polygon_type)
-        type_name = type_conf.get("name", self.polygon_type) if type_conf else self.polygon_type
         display_id = self.polygon_id if self.polygon_id else "?"
-        return f"{type_name} ({display_id})"
+        return f"{self.polygon_type} ({display_id})"
 
     def contextMenuEvent(self, event):
         from PyQt6.QtWidgets import QMenu
@@ -53,7 +50,7 @@ class CustomPolygonItem(PolygonItem):
 
         for key in sorted_keys:
             t_data = types[key]
-            action = menu.addAction(t_data["name"])
+            action = menu.addAction(key)
             if key == self.polygon_type:
                 action.setCheckable(True)
                 action.setChecked(True)

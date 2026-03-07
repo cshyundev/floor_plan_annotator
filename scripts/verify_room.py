@@ -10,7 +10,7 @@ config = ConfigManager.instance()
 # Check Config
 print("Checking Room Config...")
 types = config.get_value("rooms", "types")
-assert "living_room" in types
+assert "Living Room" in types
 print(f"Room Types Found: {list(types.keys())}")
 
 # Check RoomItem
@@ -23,7 +23,7 @@ nodes = [n1, n2, n3]
 for n in nodes:
     scene.addItem(n)
 
-room = RoomItem(nodes, room_type="living_room", room_id="test_123")
+room = RoomItem(nodes, room_type="Living Room", room_id="test_123")
 scene.addItem(room)
 
 # Check Visuals

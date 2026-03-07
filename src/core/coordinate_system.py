@@ -69,6 +69,22 @@ class CoordinateSystem:
             )
         return getattr(cls, name)()
 
+    # ── Preset matching ─────────────────────────────────────────────────
+
+    def to_preset_name(self) -> str | None:
+        """Return preset name if this matches a known preset, else None.
+
+        Comparison ignores floor_level (independent of the preset).
+        """
+        for name in self.PRESET_NAMES:
+            preset = getattr(self.__class__, name)()
+            if (self.up_axis == preset.up_axis
+                    and self.up_direction == preset.up_direction
+                    and self.floor_axes == preset.floor_axes
+                    and self.flip_floor_v == preset.flip_floor_v):
+                return name
+        return None
+
     # ── Serialization ─────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:

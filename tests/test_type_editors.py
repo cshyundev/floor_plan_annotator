@@ -19,30 +19,35 @@ class TestRoomTypeEditor(unittest.TestCase):
         self.editor = RoomTypeEditorWidget()
 
     def test_load_types_displays_name(self):
-        """List items should show name, with key stored in UserRole."""
+        """List items should show key (=name), with key stored in UserRole."""
         config = ConfigManager.instance()
         types = config.get_room_types()
         for i in range(self.editor.type_list.count()):
             item = self.editor.type_list.item(i)
             key = item.data(Qt.ItemDataRole.UserRole)
             self.assertIn(key, types)
-            self.assertEqual(item.text(), types[key].get("name", key))
+            self.assertEqual(item.text(), key)
 
     def test_on_item_clicked_sets_key_from_user_role(self):
-        """Clicking an item should set current_key to the internal key, not display text."""
+        """Clicking an item should set current_key equal to display text (name=key)."""
         if self.editor.type_list.count() == 0:
             self.skipTest("No room types configured")
         item = self.editor.type_list.item(0)
         self.editor.on_item_clicked(item)
         expected_key = item.data(Qt.ItemDataRole.UserRole)
         self.assertEqual(self.editor.current_key, expected_key)
-        self.assertNotEqual(self.editor.current_key, item.text())
+        self.assertEqual(self.editor.current_key, item.text())
 
     @patch("src.gui.base_type_editor.QInputDialog.getText", return_value=("Test Room", True))
     def test_add_type_with_dialog(self, mock_dialog):
-        """Add button should create type with user-provided name."""
-        count_before = self.editor.type_list.count()
+        """Add button should create type with name as key."""
         config = ConfigManager.instance()
+        # Ensure clean state
+        if "Test Room" in config.get_room_types():
+            config.delete_room_type("Test Room")
+            self.editor.load_types()
+
+        count_before = self.editor.type_list.count()
         types_before = set(config.get_room_types().keys())
 
         self.editor.add_type()
@@ -52,7 +57,7 @@ class TestRoomTypeEditor(unittest.TestCase):
         new_keys = set(types_after.keys()) - types_before
         self.assertEqual(len(new_keys), 1)
         new_key = new_keys.pop()
-        self.assertEqual(types_after[new_key]["name"], "Test Room")
+        self.assertEqual(new_key, "Test Room")
 
         # Clean up
         config.delete_room_type(new_key)
@@ -71,20 +76,25 @@ class TestRoomTypeEditor(unittest.TestCase):
         self.editor.add_type()
         self.assertEqual(self.editor.type_list.count(), count_before)
 
-    def test_on_name_changed_updates_list_text(self):
-        """Changing name should update the list item's display text."""
+    def test_on_name_finished_renames_type(self):
+        """Finishing name edit should rename the type (key changes)."""
         if self.editor.type_list.count() == 0:
             self.skipTest("No room types configured")
         item = self.editor.type_list.item(0)
         self.editor.type_list.setCurrentItem(item)
         self.editor.on_item_clicked(item)
 
-        original_name = item.text()
-        self.editor.on_name_changed("Updated Name")
-        self.assertEqual(item.text(), "Updated Name")
+        original_key = self.editor.current_key
+        new_name = "Renamed Room Test"
+        self.editor.name_edit.setText(new_name)
+        self.editor.on_name_finished()
+        self.assertEqual(self.editor.current_key, new_name)
+        self.assertEqual(item.text(), new_name)
 
         # Restore
-        self.editor.on_name_changed(original_name)
+        self.editor.name_edit.setText(original_key)
+        self.editor.on_name_finished()
+        self.assertEqual(self.editor.current_key, original_key)
 
     def test_generate_unique_color_avoids_existing(self):
         """Generated color hue should differ from all existing hues by at least min_hue_dist."""
@@ -124,7 +134,7 @@ class TestCustomPolygonTypeEditor(unittest.TestCase):
             item = self.editor.type_list.item(i)
             key = item.data(Qt.ItemDataRole.UserRole)
             self.assertIn(key, types)
-            self.assertEqual(item.text(), types[key].get("name", key))
+            self.assertEqual(item.text(), key)
 
     def test_on_item_clicked_sets_key_from_user_role(self):
         if self.editor.type_list.count() == 0:
@@ -136,8 +146,12 @@ class TestCustomPolygonTypeEditor(unittest.TestCase):
 
     @patch("src.gui.base_type_editor.QInputDialog.getText", return_value=("Test Zone", True))
     def test_add_type_with_dialog(self, mock_dialog):
-        count_before = self.editor.type_list.count()
         config = ConfigManager.instance()
+        if "Test Zone" in config.get_custom_polygon_types():
+            config.delete_custom_polygon_type("Test Zone")
+            self.editor.load_types()
+
+        count_before = self.editor.type_list.count()
         types_before = set(config.get_custom_polygon_types().keys())
 
         self.editor.add_type()
@@ -147,7 +161,7 @@ class TestCustomPolygonTypeEditor(unittest.TestCase):
         new_keys = set(types_after.keys()) - types_before
         self.assertEqual(len(new_keys), 1)
         new_key = new_keys.pop()
-        self.assertEqual(types_after[new_key]["name"], "Test Zone")
+        self.assertEqual(new_key, "Test Zone")
 
         config.delete_custom_polygon_type(new_key)
 
@@ -163,18 +177,24 @@ class TestCustomPolygonTypeEditor(unittest.TestCase):
         self.editor.add_type()
         self.assertEqual(self.editor.type_list.count(), count_before)
 
-    def test_on_name_changed_updates_list_text(self):
+    def test_on_name_finished_renames_type(self):
         if self.editor.type_list.count() == 0:
             self.skipTest("No custom polygon types configured")
         item = self.editor.type_list.item(0)
         self.editor.type_list.setCurrentItem(item)
         self.editor.on_item_clicked(item)
 
-        original_name = item.text()
-        self.editor.on_name_changed("Updated Zone")
-        self.assertEqual(item.text(), "Updated Zone")
+        original_key = self.editor.current_key
+        new_name = "Renamed Zone Test"
+        self.editor.name_edit.setText(new_name)
+        self.editor.on_name_finished()
+        self.assertEqual(self.editor.current_key, new_name)
+        self.assertEqual(item.text(), new_name)
 
-        self.editor.on_name_changed(original_name)
+        # Restore
+        self.editor.name_edit.setText(original_key)
+        self.editor.on_name_finished()
+        self.assertEqual(self.editor.current_key, original_key)
 
     def test_generate_unique_color_valid_format(self):
         fill, border = self.editor._generate_unique_color()
@@ -196,7 +216,7 @@ class TestObjectTypeEditor(unittest.TestCase):
             item = self.editor.type_list.item(i)
             key = item.data(Qt.ItemDataRole.UserRole)
             self.assertIn(key, types)
-            self.assertEqual(item.text(), types[key].get("name", key))
+            self.assertEqual(item.text(), key)
 
     def test_on_item_clicked_sets_key_from_user_role(self):
         if self.editor.type_list.count() == 0:
@@ -208,8 +228,12 @@ class TestObjectTypeEditor(unittest.TestCase):
 
     @patch("src.gui.base_type_editor.QInputDialog.getText", return_value=("Test Object", True))
     def test_add_type_with_dialog(self, mock_dialog):
-        count_before = self.editor.type_list.count()
         config = ConfigManager.instance()
+        if "Test Object" in config.get_object_types():
+            config.delete_object_type("Test Object")
+            self.editor.load_types()
+
+        count_before = self.editor.type_list.count()
         types_before = set(config.get_object_types().keys())
 
         self.editor.add_type()
@@ -219,7 +243,7 @@ class TestObjectTypeEditor(unittest.TestCase):
         new_keys = set(types_after.keys()) - types_before
         self.assertEqual(len(new_keys), 1)
         new_key = new_keys.pop()
-        self.assertEqual(types_after[new_key]["name"], "Test Object")
+        self.assertEqual(new_key, "Test Object")
 
         config.delete_object_type(new_key)
 
@@ -235,18 +259,24 @@ class TestObjectTypeEditor(unittest.TestCase):
         self.editor.add_type()
         self.assertEqual(self.editor.type_list.count(), count_before)
 
-    def test_on_name_changed_updates_list_text(self):
+    def test_on_name_finished_renames_type(self):
         if self.editor.type_list.count() == 0:
             self.skipTest("No object types configured")
         item = self.editor.type_list.item(0)
         self.editor.type_list.setCurrentItem(item)
         self.editor.on_item_clicked(item)
 
-        original_name = item.text()
-        self.editor.on_name_changed("Updated Object")
-        self.assertEqual(item.text(), "Updated Object")
+        original_key = self.editor.current_key
+        new_name = "Renamed Object Test"
+        self.editor.name_edit.setText(new_name)
+        self.editor.on_name_finished()
+        self.assertEqual(self.editor.current_key, new_name)
+        self.assertEqual(item.text(), new_name)
 
-        self.editor.on_name_changed(original_name)
+        # Restore
+        self.editor.name_edit.setText(original_key)
+        self.editor.on_name_finished()
+        self.assertEqual(self.editor.current_key, original_key)
 
     def test_generate_unique_color_valid_format(self):
         fill, border = self.editor._generate_unique_color()

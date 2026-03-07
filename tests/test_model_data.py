@@ -87,9 +87,9 @@ class TestDataModel(unittest.TestCase):
         )
         d = pd.to_dict()
 
-        # Verify serialized
+        # Verify v1.0 schema structure
         self.assertEqual(len(d["objects"]), 1)
-        self.assertEqual(len(d["custom_polygons"]), 1)
+        self.assertEqual(len(d["zones"]), 1)
 
         # Roundtrip
         pd2 = ProjectData.from_dict(d)
@@ -99,16 +99,6 @@ class TestDataModel(unittest.TestCase):
         self.assertEqual(len(pd2.custom_polygons), 1)
         self.assertEqual(pd2.custom_polygons[0].polygon_type, "zone_a")
 
-    def test_project_data_backwards_compat_no_custom_polygons(self):
-        """Old JSON without custom_polygons should deserialize without error."""
-        d = {
-            "version": "1.0",
-            "walls": [],
-            "rooms": [],
-            "objects": [],
-        }
-        pd = ProjectData.from_dict(d)
-        self.assertEqual(pd.custom_polygons, [])
 
 
 class TestMapMetadata(unittest.TestCase):
@@ -183,11 +173,11 @@ class TestMapMetadata(unittest.TestCase):
         self.assertEqual(meta.image_path_absolute, "/home/user/project/maps/floor1.png")
 
 
-class TestProjectDataWithMapMetadata(unittest.TestCase):
-    """Tests for ProjectData v3.0 map_metadata integration."""
+class TestProjectDataSource(unittest.TestCase):
+    """Tests for ProjectData source (map_metadata) serialization."""
 
-    def test_project_data_v3_with_map_metadata(self):
-        """ProjectData with map_metadata set should roundtrip correctly."""
+    def test_source_from_map_metadata(self):
+        """ProjectData with map_metadata produces 'source' in v1.0 output."""
         meta = MapMetadata(
             image_path="data/map.png",
             image_path_absolute="/abs/data/map.png",
@@ -203,54 +193,339 @@ class TestProjectDataWithMapMetadata(unittest.TestCase):
 
         d = pd.to_dict()
 
-        # map_metadata should be present in the serialized dict
-        self.assertIn("map_metadata", d)
-        self.assertEqual(d["map_metadata"]["image_path"], "data/map.png")
-        self.assertEqual(d["map_metadata"]["image_width"], 200)
-        self.assertEqual(d["version"], "3.0")
+        # v1.0 schema: source block instead of map_metadata
+        self.assertIn("source", d)
+        self.assertEqual(d["source"]["file_name"], "map.png")
+        self.assertEqual(d["version"], "1.0")
 
         # Roundtrip
         pd2 = ProjectData.from_dict(d)
         self.assertIsNotNone(pd2.map_metadata)
-        self.assertEqual(pd2.map_metadata.image_path, "data/map.png")
-        self.assertAlmostEqual(pd2.map_metadata.resolution, 0.05)
-        self.assertAlmostEqual(pd2.map_metadata.origin_x, -5.0)
-        self.assertEqual(pd2.map_metadata.image_width, 200)
+        self.assertEqual(pd2.map_metadata.image_path, "map.png")
         self.assertEqual(len(pd2.walls), 1)
 
-    def test_project_data_without_map_metadata(self):
-        """ProjectData with map_metadata=None should not include it in dict."""
+    def test_source_occupancy_grid(self):
+        """Occupancy grid data_type includes occupancy_grid sub-object in source."""
+        meta = MapMetadata(
+            image_path="floor.pgm",
+            resolution=0.05,
+            origin_x=-10.0,
+            origin_y=-10.0,
+            origin_yaw=0.0,
+            negate=0,
+            occupied_thresh=0.65,
+            free_thresh=0.196,
+        )
+        pd = ProjectData()
+        pd.map_metadata = meta
+        pd.data_type = "occupancy_grid"
+
+        d = pd.to_dict()
+        self.assertIn("occupancy_grid", d["source"])
+        occ = d["source"]["occupancy_grid"]
+        self.assertAlmostEqual(occ["resolution"], 0.05)
+        self.assertEqual(occ["origin"], [-10.0, -10.0, 0.0])
+
+        # Roundtrip
+        pd2 = ProjectData.from_dict(d)
+        self.assertIsNotNone(pd2.map_metadata)
+        self.assertAlmostEqual(pd2.map_metadata.resolution, 0.05)
+        self.assertAlmostEqual(pd2.map_metadata.origin_x, -10.0)
+
+    def test_no_map_metadata_no_source(self):
+        """ProjectData with map_metadata=None should not include source."""
         pd = ProjectData()
         pd.map_metadata = None
 
         d = pd.to_dict()
-        self.assertNotIn("map_metadata", d)
+        self.assertNotIn("source", d)
 
-    def test_v2_backward_compatibility_no_map_metadata(self):
-        """A v2.0 dict with coordinate_system but no map_metadata should deserialize with map_metadata=None."""
+
+
+class TestV1SchemaFormat(unittest.TestCase):
+    """Tests for the v1.0 schema output format."""
+
+    def test_to_dict_structure(self):
+        """to_dict produces correct top-level v1.0 structure."""
+        pd = ProjectData()
+        pd.walls.append(Wall(start=Point2D(1, 2), end=Point2D(3, 4)))
+        pd.rooms.append(Room(id="r1", points=[Point2D(0,0), Point2D(1,0), Point2D(1,1)], room_type="bedroom"))
+        pd.objects.append(Object(id="o1", center=Point2D(5, 5), width=2, height=1, rotation=0, object_type="furniture"))
+        pd.custom_polygons.append(CustomPolygon(id="z1", points=[Point2D(0,0), Point2D(1,0), Point2D(1,1)], polygon_type="no_go"))
+
+        d = pd.to_dict()
+
+        self.assertEqual(d["version"], "1.0")
+        self.assertEqual(d["data_type"], "point_cloud")
+        self.assertEqual(d["coordinate_system"], "ros")
+        self.assertIn("layout", d)
+        self.assertIn("walls", d["layout"])
+        self.assertIn("rooms", d["layout"])
+        self.assertIn("objects", d)
+        self.assertIn("zones", d)
+
+    def test_wall_3d_serialization(self):
+        """Walls serialize as [[x,y,z], [x,y,z]] with z=floor_level."""
+        pd = ProjectData()
+        pd.walls.append(Wall(start=Point2D(1.0, 2.0), end=Point2D(3.0, 4.0)))
+
+        d = pd.to_dict()
+        walls = d["layout"]["walls"]
+        self.assertEqual(len(walls), 1)
+        # ROS: make_3d_point(h, v, height) → [h, v, height]
+        self.assertEqual(walls[0], [[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]])
+
+    def test_wall_3d_with_floor_level(self):
+        """Walls with non-zero floor_level use it as z."""
         from src.core.coordinate_system import CoordinateSystem
-        d = {
-            "version": "2.0",
-            "coordinate_system": CoordinateSystem.ros().to_dict(),
-            "walls": [],
-            "rooms": [],
-            "objects": [],
-            "custom_polygons": [],
-        }
-        pd = ProjectData.from_dict(d)
-        self.assertIsNone(pd.map_metadata)
-        self.assertEqual(pd.version, "2.0")
+        pd = ProjectData()
+        cs = CoordinateSystem.ros()
+        cs.floor_level = 1.5
+        pd.coordinate_system = cs
+        pd.walls.append(Wall(start=Point2D(0, 0), end=Point2D(1, 1)))
 
-    def test_v1_backward_compatibility_no_map_metadata(self):
-        """A v1.0 dict (no coordinate_system, no map_metadata) should work."""
-        d = {
-            "version": "1.0",
-            "walls": [],
-            "rooms": [],
-        }
-        pd = ProjectData.from_dict(d)
-        self.assertIsNone(pd.map_metadata)
+        d = pd.to_dict()
+        self.assertEqual(d["floor_level"], 1.5)
+        self.assertEqual(d["layout"]["walls"][0], [[0, 0, 1.5], [1, 1, 1.5]])
+
+    def test_room_serialization(self):
+        """Rooms serialize with id, type, and Point3D array."""
+        pd = ProjectData()
+        pd.rooms.append(Room(id="0", points=[Point2D(0,0), Point2D(1,0), Point2D(1,1)], room_type="kitchen"))
+
+        d = pd.to_dict()
+        rooms = d["layout"]["rooms"]
+        self.assertEqual(len(rooms), 1)
+        self.assertEqual(rooms[0]["id"], "0")
+        self.assertEqual(rooms[0]["type"], "kitchen")
+        self.assertEqual(rooms[0]["points"], [[0, 0, 0.0], [1, 0, 0.0], [1, 1, 0.0]])
+
+    def test_object_obb_serialization(self):
+        """Objects serialize as OBB with center, extent, quaternion."""
+        pd = ProjectData()
+        pd.objects.append(Object(
+            id="0", center=Point2D(5.0, 3.0),
+            width=1.2, height=0.8, rotation=0.0,
+            object_type="furniture",
+            z_min=0.0, z_max=0.75,
+        ))
+
+        d = pd.to_dict()
+        obj = d["objects"][0]
+        self.assertEqual(obj["id"], "0")
+        self.assertEqual(obj["type"], "furniture")
+        # center: [5.0, 3.0, 0.375] (midpoint of z_min=0 and z_max=0.75)
+        self.assertAlmostEqual(obj["center"][0], 5.0)
+        self.assertAlmostEqual(obj["center"][1], 3.0)
+        self.assertAlmostEqual(obj["center"][2], 0.375)
+        # extent: [width, height, depth]
+        self.assertEqual(obj["extent"], [1.2, 0.8, 0.75])
+        # rotation: identity quaternion for 0 degrees
+        self.assertAlmostEqual(obj["rotation"][0], 1.0)
+        self.assertAlmostEqual(obj["rotation"][1], 0.0)
+        self.assertAlmostEqual(obj["rotation"][2], 0.0)
+        self.assertAlmostEqual(obj["rotation"][3], 0.0)
+
+    def test_zone_serialization(self):
+        """CustomPolygons serialize as zones."""
+        pd = ProjectData()
+        pd.custom_polygons.append(CustomPolygon(
+            id="0", points=[Point2D(0,0), Point2D(2,0), Point2D(2,1.5)], polygon_type="no_go"
+        ))
+
+        d = pd.to_dict()
+        zones = d["zones"]
+        self.assertEqual(len(zones), 1)
+        self.assertEqual(zones[0]["id"], "0")
+        self.assertEqual(zones[0]["type"], "no_go")
+        self.assertEqual(len(zones[0]["points"]), 3)
+
+    def test_object_rotation_roundtrip(self):
+        """degrees → quaternion → degrees roundtrip preserves rotation."""
+        from src.model.data import _degrees_to_quaternion, _quaternion_to_degrees
+        from src.core.coordinate_system import CoordinateSystem
+
+        for cs in [CoordinateSystem.ros(), CoordinateSystem.opencv(), CoordinateSystem.opengl()]:
+            for deg in [0, 45, 90, 180, -30, 270]:
+                quat = _degrees_to_quaternion(deg, cs)
+                restored = _quaternion_to_degrees(quat, cs)
+                self.assertAlmostEqual(restored, deg, places=5,
+                    msg=f"Failed for {cs.to_preset_name()} at {deg}°")
+
+    def test_full_roundtrip(self):
+        """to_dict → from_dict preserves all data."""
+        pd = ProjectData()
+        pd.data_type = "point_cloud"
+        pd.created_at = "2026-03-01T12:00:00+00:00"
+        pd.modified_at = "2026-03-01T15:00:00+00:00"
+        pd.walls.append(Wall(start=Point2D(1.0, 2.0), end=Point2D(3.0, 4.0)))
+        pd.rooms.append(Room(id="r0", points=[
+            Point2D(0, 0), Point2D(5, 0), Point2D(5, 5), Point2D(0, 5)
+        ], room_type="bedroom"))
+        pd.objects.append(Object(
+            id="o0", center=Point2D(2.5, 2.5),
+            width=1.0, height=0.5, rotation=45.0,
+            object_type="furniture", z_min=0.0, z_max=0.8,
+        ))
+        pd.custom_polygons.append(CustomPolygon(
+            id="z0", points=[Point2D(0, 0), Point2D(1, 0), Point2D(1, 1)],
+            polygon_type="caution",
+        ))
+
+        d = pd.to_dict()
+        pd2 = ProjectData.from_dict(d)
+
+        self.assertEqual(pd2.version, "1.0")
+        self.assertEqual(pd2.data_type, "point_cloud")
+        self.assertEqual(pd2.created_at, "2026-03-01T12:00:00+00:00")
+        self.assertEqual(pd2.modified_at, "2026-03-01T15:00:00+00:00")
+
+        # Walls
+        self.assertEqual(len(pd2.walls), 1)
+        self.assertAlmostEqual(pd2.walls[0].start.x, 1.0)
+        self.assertAlmostEqual(pd2.walls[0].end.y, 4.0)
+
+        # Rooms
+        self.assertEqual(len(pd2.rooms), 1)
+        self.assertEqual(pd2.rooms[0].id, "r0")
+        self.assertEqual(pd2.rooms[0].room_type, "Bedroom")
+        self.assertEqual(len(pd2.rooms[0].points), 4)
+
+        # Objects
+        self.assertEqual(len(pd2.objects), 1)
+        self.assertAlmostEqual(pd2.objects[0].center.x, 2.5)
+        self.assertAlmostEqual(pd2.objects[0].width, 1.0)
+        self.assertAlmostEqual(pd2.objects[0].rotation, 45.0, places=3)
+        self.assertEqual(pd2.objects[0].object_type, "Furniture")
+
+        # Zones → custom_polygons
+        self.assertEqual(len(pd2.custom_polygons), 1)
+        self.assertEqual(pd2.custom_polygons[0].id, "z0")
+        self.assertEqual(pd2.custom_polygons[0].polygon_type, "caution")
+
+    def test_load_example_json(self):
+        """Load schemas/example.json and verify it parses correctly."""
+        import json
+        import os
+        example_path = os.path.join(os.path.dirname(__file__), "..", "schemas", "example.json")
+        with open(example_path) as f:
+            data = json.load(f)
+
+        pd = ProjectData.from_dict(data)
+
         self.assertEqual(pd.version, "1.0")
+        self.assertEqual(pd.data_type, "point_cloud")
+        self.assertEqual(len(pd.walls), 4)
+        self.assertEqual(len(pd.rooms), 1)
+        self.assertEqual(pd.rooms[0].room_type, "Bedroom")
+        self.assertEqual(len(pd.objects), 2)
+        self.assertEqual(pd.objects[0].object_type, "Furniture")
+        self.assertEqual(len(pd.custom_polygons), 2)
+        self.assertEqual(pd.custom_polygons[0].polygon_type, "no_go")
+
+    def test_timestamps_optional(self):
+        """created_at / modified_at are optional."""
+        pd = ProjectData()
+        d = pd.to_dict()
+        self.assertNotIn("created_at", d)
+        self.assertNotIn("modified_at", d)
+
+    def test_floor_level_omitted_when_zero(self):
+        """floor_level is not included when 0.0."""
+        pd = ProjectData()
+        d = pd.to_dict()
+        self.assertNotIn("floor_level", d)
+
+    def test_opencv_coordinate_system_roundtrip(self):
+        """OpenCV coordinate system serializes as string and roundtrips."""
+        from src.core.coordinate_system import CoordinateSystem
+        pd = ProjectData()
+        pd.coordinate_system = CoordinateSystem.opencv()
+        pd.walls.append(Wall(start=Point2D(1, 2), end=Point2D(3, 4)))
+
+        d = pd.to_dict()
+        self.assertEqual(d["coordinate_system"], "opencv")
+
+        pd2 = ProjectData.from_dict(d)
+        self.assertEqual(pd2.coordinate_system.up_axis, 1)
+        self.assertEqual(pd2.coordinate_system.up_direction, -1)
+        self.assertEqual(pd2.coordinate_system.floor_axes, (0, 2))
+
+
+class TestSchemaValidation(unittest.TestCase):
+    """Tests for JSON schema validation in ProjectIO.load_project."""
+
+    def test_invalid_version_rejected(self):
+        """Version mismatch raises ValidationError."""
+        import json, tempfile, os
+        from jsonschema import ValidationError
+        from src.core.io import ProjectIO
+
+        data = {
+            "version": "99.0",
+            "data_type": "point_cloud",
+            "coordinate_system": "ros",
+            "layout": {"walls": [], "rooms": []},
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(data, f)
+            path = f.name
+        try:
+            with self.assertRaises(ValidationError):
+                ProjectIO.load_project(path)
+        finally:
+            os.unlink(path)
+
+    def test_missing_required_field_rejected(self):
+        """Missing required 'layout' key raises ValidationError."""
+        import json, tempfile, os
+        from jsonschema import ValidationError
+        from src.core.io import ProjectIO
+
+        data = {
+            "version": "1.0",
+            "data_type": "point_cloud",
+            "coordinate_system": "ros",
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(data, f)
+            path = f.name
+        try:
+            with self.assertRaises(ValidationError):
+                ProjectIO.load_project(path)
+        finally:
+            os.unlink(path)
+
+    def test_invalid_coordinate_system_rejected(self):
+        """Invalid coordinate_system enum raises ValidationError."""
+        import json, tempfile, os
+        from jsonschema import ValidationError
+        from src.core.io import ProjectIO
+
+        data = {
+            "version": "1.0",
+            "data_type": "point_cloud",
+            "coordinate_system": "unity",
+            "layout": {"walls": [], "rooms": []},
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(data, f)
+            path = f.name
+        try:
+            with self.assertRaises(ValidationError):
+                ProjectIO.load_project(path)
+        finally:
+            os.unlink(path)
+
+    def test_valid_example_passes(self):
+        """schemas/example.json passes schema validation."""
+        import os
+        from src.core.io import ProjectIO
+
+        example_path = os.path.join(os.path.dirname(__file__), "..", "schemas", "example.json")
+        pd = ProjectIO.load_project(example_path)
+        self.assertEqual(pd.version, "1.0")
+        self.assertEqual(len(pd.walls), 4)
 
 
 if __name__ == "__main__":

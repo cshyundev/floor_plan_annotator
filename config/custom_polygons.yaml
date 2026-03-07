@@ -1,18 +1,5 @@
 types:
-  clean_zone:
-    name: Clean Zone
-    color:
-    - 100
-    - 220
-    - 100
-    - 100
-    border:
-    - 50
-    - 160
-    - 50
-    index: 1
-  danger_zone:
-    name: Danger Zone
+  Danger Zone:
     color:
     - 255
     - 100
@@ -23,8 +10,7 @@ types:
     - 50
     - 50
     index: 2
-  complex_zone:
-    name: Complex Zone
+  Complex Zone:
     color:
     - 255
     - 200
@@ -35,8 +21,7 @@ types:
     - 150
     - 50
     index: 3
-  cpoly_f65a:
-    name: annotation
+  annotation:
     color:
     - 206
     - 111
@@ -47,4 +32,15 @@ types:
     - 34
     - 108
     index: 4
-default_type: clean_zone
+  Clean Zone:
+    color:
+    - 100
+    - 220
+    - 100
+    - 100
+    border:
+    - 50
+    - 160
+    - 50
+    index: 1
+default_type: Clean Zone

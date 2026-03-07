@@ -1,20 +1,5 @@
 types:
-  furniture:
-    name: Furniture
-    color:
-    - 150
-    - 200
-    - 255
-    - 150
-    border:
-    - 80
-    - 130
-    - 200
-    index: 1
-    default_elevation: 0.0
-    default_3d_height: 0.5
-  appliance:
-    name: Appliance
+  Appliance:
     color:
     - 255
     - 220
@@ -27,8 +12,7 @@ types:
     index: 2
     default_elevation: 0.0
     default_3d_height: 0.8
-  obstacle:
-    name: Obstacle
+  Obstacle:
     color:
     - 200
     - 150
@@ -41,8 +25,7 @@ types:
     index: 3
     default_elevation: 0.0
     default_3d_height: 0.5
-  obj_b8f5:
-    name: Table
+  Table:
     color:
     - 201
     - 117
@@ -55,4 +38,17 @@ types:
     index: 4
     default_elevation: 0.0
     default_3d_height: 0.75
-default_type: furniture
+  Furniture:
+    color:
+    - 150
+    - 200
+    - 255
+    - 150
+    border:
+    - 80
+    - 130
+    - 200
+    index: 1
+    default_elevation: 0.0
+    default_3d_height: 0.5
+default_type: Furniture

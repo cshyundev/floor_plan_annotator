@@ -145,24 +145,33 @@ class ConfigManager:
         except Exception as e:
             print(f"Error saving config: {e}")
 
-    def add_custom_polygon_type(self, key, name, color, border):
+    def add_custom_polygon_type(self, key, color, border):
         if key in self.custom_polygons.get("types", {}):
             return False
         if "types" not in self.custom_polygons:
             self.custom_polygons["types"] = {}
         max_idx = max((v.get("index", 0) for v in self.custom_polygons["types"].values()), default=0)
         self.custom_polygons["types"][key] = {
-            "name": name, "color": color, "border": border, "index": max_idx + 1
+            "color": color, "border": border, "index": max_idx + 1
         }
         self.save_config("custom_polygons")
         return True
 
-    def update_custom_polygon_type(self, key, name=None, color=None, border=None):
+    def update_custom_polygon_type(self, key, color=None, border=None):
         if key not in self.custom_polygons.get("types", {}):
             return False
-        if name: self.custom_polygons["types"][key]["name"] = name
         if color: self.custom_polygons["types"][key]["color"] = color
         if border: self.custom_polygons["types"][key]["border"] = border
+        self.save_config("custom_polygons")
+        return True
+
+    def rename_custom_polygon_type(self, old_key, new_key):
+        types = self.custom_polygons.get("types", {})
+        if old_key not in types or new_key in types:
+            return False
+        types[new_key] = types.pop(old_key)
+        if self.custom_polygons.get("default_type") == old_key:
+            self.custom_polygons["default_type"] = new_key
         self.save_config("custom_polygons")
         return True
 
@@ -173,7 +182,7 @@ class ConfigManager:
         self.save_config("custom_polygons")
         return True
 
-    def add_object_type(self, key, name, color, border,
+    def add_object_type(self, key, color, border,
                         default_elevation=0.0, default_3d_height=0.5):
         if key in self.objects.get("types", {}):
             return False
@@ -181,23 +190,32 @@ class ConfigManager:
             self.objects["types"] = {}
         max_idx = max((v.get("index", 0) for v in self.objects["types"].values()), default=0)
         self.objects["types"][key] = {
-            "name": name, "color": color, "border": border, "index": max_idx + 1,
+            "color": color, "border": border, "index": max_idx + 1,
             "default_elevation": default_elevation, "default_3d_height": default_3d_height,
         }
         self.save_config("objects")
         return True
 
-    def update_object_type(self, key, name=None, color=None, border=None,
+    def update_object_type(self, key, color=None, border=None,
                            default_elevation=None, default_3d_height=None):
         if key not in self.objects.get("types", {}):
             return False
-        if name: self.objects["types"][key]["name"] = name
         if color: self.objects["types"][key]["color"] = color
         if border: self.objects["types"][key]["border"] = border
         if default_elevation is not None:
             self.objects["types"][key]["default_elevation"] = default_elevation
         if default_3d_height is not None:
             self.objects["types"][key]["default_3d_height"] = default_3d_height
+        self.save_config("objects")
+        return True
+
+    def rename_object_type(self, old_key, new_key):
+        types = self.objects.get("types", {})
+        if old_key not in types or new_key in types:
+            return False
+        types[new_key] = types.pop(old_key)
+        if self.objects.get("default_type") == old_key:
+            self.objects["default_type"] = new_key
         self.save_config("objects")
         return True
 
@@ -208,20 +226,16 @@ class ConfigManager:
         self.save_config("objects")
         return True
 
-    def add_room_type(self, key, name, color, border):
+    def add_room_type(self, key, color, border):
         if key in self.rooms.get("types", {}):
             return False
-            
+
         if "types" not in self.rooms:
             self.rooms["types"] = {}
-            
-        # Auto index
-        max_idx = 0
-        for k, v in self.rooms["types"].items():
-             max_idx = max(max_idx, v.get("index", 0))
-             
+
+        max_idx = max((v.get("index", 0) for v in self.rooms["types"].values()), default=0)
+
         self.rooms["types"][key] = {
-            "name": name,
             "color": color,
             "border": border,
             "index": max_idx + 1
@@ -229,21 +243,30 @@ class ConfigManager:
         self.save_config("rooms")
         return True
 
-    def update_room_type(self, key, name=None, color=None, border=None):
+    def update_room_type(self, key, color=None, border=None):
         if key not in self.rooms.get("types", {}):
             return False
-            
-        if name: self.rooms["types"][key]["name"] = name
+
         if color: self.rooms["types"][key]["color"] = color
         if border: self.rooms["types"][key]["border"] = border
-        
+
+        self.save_config("rooms")
+        return True
+
+    def rename_room_type(self, old_key, new_key):
+        types = self.rooms.get("types", {})
+        if old_key not in types or new_key in types:
+            return False
+        types[new_key] = types.pop(old_key)
+        if self.rooms.get("default_type") == old_key:
+            self.rooms["default_type"] = new_key
         self.save_config("rooms")
         return True
 
     def delete_room_type(self, key):
         if key not in self.rooms.get("types", {}):
             return False
-            
+
         del self.rooms["types"][key]
         self.save_config("rooms")
         return True

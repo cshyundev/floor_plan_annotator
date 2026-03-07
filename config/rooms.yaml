@@ -1,18 +1,5 @@
 types:
-  living_room:
-    name: Living Room
-    color:
-    - 255
-    - 200
-    - 200
-    - 100
-    border:
-    - 255
-    - 100
-    - 100
-    index: 1
-  kitchen:
-    name: Kitchen
+  Kitchen:
     color:
     - 200
     - 255
@@ -23,8 +10,7 @@ types:
     - 255
     - 100
     index: 2
-  bedroom:
-    name: Bedroom
+  Bedroom:
     color:
     - 200
     - 200
@@ -35,8 +21,7 @@ types:
     - 100
     - 255
     index: 3
-  bathroom:
-    name: Bathroom
+  Bathroom:
     color:
     - 200
     - 255
@@ -47,8 +32,7 @@ types:
     - 255
     - 255
     index: 4
-  corridor:
-    name: Corridor
+  Corridor:
     color:
     - 240
     - 240
@@ -59,8 +43,7 @@ types:
     - 180
     - 180
     index: 5
-  balcony:
-    name: Balcony
+  Balcony:
     color:
     - 255
     - 255
@@ -71,8 +54,7 @@ types:
     - 200
     - 100
     index: 6
-  entrance:
-    name: Entrance
+  Entrance:
     color:
     - 230
     - 200
@@ -83,8 +65,7 @@ types:
     - 100
     - 200
     index: 7
-  utility:
-    name: Utility
+  Utility:
     color:
     - 192
     - 28
@@ -95,8 +76,7 @@ types:
     - 150
     - 150
     index: 8
-  room_b3a1:
-    name: Master Room
+  Master Room:
     color:
     - 153
     - 193
@@ -107,4 +87,15 @@ types:
     - 100
     - 100
     index: 9
-default_type: living_room
+  Living Room:
+    color:
+    - 255
+    - 200
+    - 200
+    - 100
+    border:
+    - 255
+    - 100
+    - 100
+    index: 1
+default_type: Living Room

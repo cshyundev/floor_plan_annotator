@@ -53,7 +53,7 @@ class TestItemsExtended(unittest.TestCase):
         """RoomItem must carry annotation_type = 'room'."""
         self.assertEqual(RoomItem.annotation_type, "room")
         nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
-        room = RoomItem(nodes, room_type="living_room")
+        room = RoomItem(nodes, room_type="Living Room")
         self.assertEqual(room.annotation_type, "room")
 
     def test_polygon_item_base_annotation_type(self):
@@ -62,7 +62,7 @@ class TestItemsExtended(unittest.TestCase):
 
     def test_room_item_style(self):
         nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
-        room = RoomItem(nodes, room_type="living_room")
+        room = RoomItem(nodes, room_type="Living Room")
 
         brush = room.brush()
 
@@ -74,7 +74,7 @@ class TestItemsExtended(unittest.TestCase):
 
     def test_room_context_menu(self):
         nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
-        room = RoomItem(nodes, room_type="living_room")
+        room = RoomItem(nodes, room_type="Living Room")
 
         with patch('PyQt6.QtWidgets.QMenu') as MockMenu:
             menu_instance = MockMenu.return_value
@@ -90,8 +90,8 @@ class TestItemsExtended(unittest.TestCase):
             menu_instance.addAction.side_effect = add_action_side_effect
 
             with patch.object(self.config, 'get_room_types', return_value={
-                "living_room": {"name": "Living Room", "color": "red"},
-                "kitchen": {"name": "Kitchen", "color": "blue"}
+                "Living Room": {"color": "red", "index": 1},
+                "Kitchen": {"color": "blue", "index": 2}
             }):
                  from PyQt6.QtWidgets import QGraphicsScene
                  real_scene = QGraphicsScene()
@@ -126,7 +126,7 @@ class TestItemsExtended(unittest.TestCase):
 
     def test_room_rotation(self):
         nodes = [NodeItem(0, 0), NodeItem(10, 0), NodeItem(10, 10)]
-        room = RoomItem(nodes, room_type="living_room")
+        room = RoomItem(nodes, room_type="Living Room")
 
         xs = [n.pos().x() for n in nodes]
         ys = [n.pos().y() for n in nodes]

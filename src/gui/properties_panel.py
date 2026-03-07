@@ -248,7 +248,7 @@ class PropertiesPanel(QWidget):
         sorted_keys = sorted(types.keys(), key=lambda k: types[k].get("index", 0))
         current_index = 0
         for i, key in enumerate(sorted_keys):
-            combo.addItem(types[key].get("name", key), key)
+            combo.addItem(key, key)
             if key == current_type:
                 current_index = i
 

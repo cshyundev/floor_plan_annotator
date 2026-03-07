@@ -23,7 +23,7 @@ class RoomTypePopup(QDialog):
 
         for key in sorted_keys:
             t_data = types[key]
-            btn = QPushButton(t_data.get("name", key))
+            btn = QPushButton(key)
 
             # Color swatch icon
             c = t_data.get("color", [200, 200, 200, 100])

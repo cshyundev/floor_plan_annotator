@@ -1,6 +1,5 @@
 import colorsys
 import random
-import uuid
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
                              QPushButton, QLineEdit, QColorDialog, QFormLayout, QMessageBox,
@@ -17,7 +16,6 @@ class BaseTypeEditorWidget(QWidget):
 
     # Subclasses must define these class attributes
     _dialog_title: str = ""
-    _key_prefix: str = ""
     _default_alpha: int = 100
     _default_color: list = [200, 200, 200, 100]
     _default_border: list = [100, 100, 100]
@@ -45,7 +43,7 @@ class BaseTypeEditorWidget(QWidget):
         form_layout = QFormLayout(self.form_widget)
 
         self.name_edit = QLineEdit()
-        self.name_edit.textChanged.connect(self.on_name_changed)
+        self.name_edit.editingFinished.connect(self.on_name_finished)
         form_layout.addRow("Name:", self.name_edit)
 
         self.color_btn = QPushButton()
@@ -76,7 +74,7 @@ class BaseTypeEditorWidget(QWidget):
         types = self._get_types()
         sorted_keys = sorted(types.keys(), key=lambda k: types[k].get("index", 0))
         for key in sorted_keys:
-            item = QListWidgetItem(types[key].get("name", key))
+            item = QListWidgetItem(key)
             item.setData(Qt.ItemDataRole.UserRole, key)
             self.type_list.addItem(item)
 
@@ -88,7 +86,7 @@ class BaseTypeEditorWidget(QWidget):
         data = self._get_type(self.current_key)
         if data:
             self.name_edit.blockSignals(True)
-            self.name_edit.setText(data.get("name", ""))
+            self.name_edit.setText(self.current_key)
             self.name_edit.blockSignals(False)
             self.update_color_btn(self.color_btn, data.get("color", self._default_color))
             self.update_color_btn(self.border_btn, data.get("border", self._default_border))
@@ -100,12 +98,26 @@ class BaseTypeEditorWidget(QWidget):
         btn.setIcon(QIcon(pixmap))
         btn.setText(f"{rgba}")
 
-    def on_name_changed(self, text):
-        if self.current_key:
-            self._update_config_type(self.current_key, name=text)
+    def on_name_finished(self):
+        if not self.current_key:
+            return
+        new_name = self.name_edit.text().strip()
+        if not new_name or new_name == self.current_key:
+            self.name_edit.setText(self.current_key)
+            return
+        if new_name in self._get_types():
+            QMessageBox.warning(self, "Duplicate Name",
+                                f"Type '{new_name}' already exists.")
+            self.name_edit.setText(self.current_key)
+            return
+        old_key = self.current_key
+        if self._rename_config_type(old_key, new_name):
+            self._update_items_type(old_key, new_name)
+            self.current_key = new_name
             current_item = self.type_list.currentItem()
             if current_item:
-                current_item.setText(text)
+                current_item.setText(new_name)
+                current_item.setData(Qt.ItemDataRole.UserRole, new_name)
             self.config_changed.emit()
 
     def pick_color(self):
@@ -169,10 +181,16 @@ class BaseTypeEditorWidget(QWidget):
         if not ok or not name.strip():
             return
         name = name.strip()
-        key = f"{self._key_prefix}{uuid.uuid4().hex[:4]}"
+        key = name
+
+        if key in self._get_types():
+            QMessageBox.warning(self, "Duplicate Name",
+                                f"Type '{key}' already exists.")
+            return
+
         color, border = self._generate_unique_color()
 
-        if self._add_config_type(key, name, color, border):
+        if self._add_config_type(key, color, border):
             self.load_types()
             for i in range(self.type_list.count()):
                 item = self.type_list.item(i)
@@ -215,10 +233,16 @@ class BaseTypeEditorWidget(QWidget):
     def _get_type(self, key):
         raise NotImplementedError
 
-    def _add_config_type(self, key, name, color, border):
+    def _add_config_type(self, key, color, border):
         raise NotImplementedError
 
     def _update_config_type(self, key, **kwargs):
+        raise NotImplementedError
+
+    def _rename_config_type(self, old_key, new_key):
+        raise NotImplementedError
+
+    def _update_items_type(self, old_key, new_key):
         raise NotImplementedError
 
     def _delete_config_type(self, key):

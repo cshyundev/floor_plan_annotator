@@ -15,7 +15,7 @@ class ObjectItem(QGraphicsPolygonItem):
     annotation_type = "object"
 
     def __init__(self, center: QPointF, width: float, height: float,
-                 angle: float = 0.0, object_type: str = "furniture", object_id: str = "",
+                 angle: float = 0.0, object_type: str = "Furniture", object_id: str = "",
                  elevation: float | None = None, height_3d: float | None = None):
         super().__init__()
         self.center = center
@@ -147,8 +147,7 @@ class ObjectItem(QGraphicsPolygonItem):
         self.setZValue(config.get_ui_value("object", "z_value"))
 
         # Update label
-        config_obj = config.get_object_type(self.object_type)
-        type_name = config_obj.get("name", self.object_type) if config_obj else self.object_type
+        type_name = self.object_type
         display_id = self.object_id if self.object_id else "?"
         bg = config.get_value("colors", "label", "background")
         if bg is None:
@@ -411,7 +410,7 @@ class ObjectItem(QGraphicsPolygonItem):
 
         for key in sorted_keys:
             t_data = types[key]
-            action = menu.addAction(t_data["name"])
+            action = menu.addAction(key)
             if key == self.object_type:
                 action.setCheckable(True)
                 action.setChecked(True)

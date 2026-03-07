@@ -4,10 +4,8 @@ window:
 
 menu:
   file: "File"
-  new_project: "New"
   load_point_cloud: "Load 3D Data..."
   load_occupancy_grid: "Load Occupancy Grid..."
-  open_project: "Open Annotations..."
   save_project: "Save"
   save_project_as: "Save As..."
   exit: "Exit"
@@ -37,8 +35,8 @@ tools:
     add_room_cmd: "Add Room"
 
   custom_polygon:
-    name: "Custom Polygon"
-    status: "Custom Polygon Tool: Left-click to add points, Right-click to finish."
+    name: "Zone"
+    status: "Zone Tool: Left-click to add points, Right-click to finish."
     add_point: "Point {} added. Right-click or close to finish."
 
   object:

@@ -23,7 +23,7 @@ class ObjectTypePopup(QDialog):
 
         for key in sorted_keys:
             t_data = types[key]
-            btn = QPushButton(t_data.get("name", key))
+            btn = QPushButton(key)
 
             c = t_data.get("color", [150, 200, 255, 150])
             pixmap = QPixmap(16, 16)

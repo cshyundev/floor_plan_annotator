@@ -5,7 +5,6 @@ from src.gui.base_type_editor import BaseTypeEditorWidget
 
 class ObjectTypeEditorWidget(BaseTypeEditorWidget):
     _dialog_title = "Add Object Type"
-    _key_prefix = "obj_"
     _default_alpha = 150
     _default_color = [150, 200, 255, 150]
     _default_border = [80, 130, 200]
@@ -64,11 +63,23 @@ class ObjectTypeEditorWidget(BaseTypeEditorWidget):
     def _get_type(self, key):
         return self.config.get_object_type(key)
 
-    def _add_config_type(self, key, name, color, border):
-        return self.config.add_object_type(key, name, color, border)
+    def _add_config_type(self, key, color, border):
+        return self.config.add_object_type(key, color, border)
 
     def _update_config_type(self, key, **kwargs):
         return self.config.update_object_type(key, **kwargs)
+
+    def _rename_config_type(self, old_key, new_key):
+        return self.config.rename_object_type(old_key, new_key)
+
+    def _update_items_type(self, old_key, new_key):
+        if not self._scene:
+            return
+        from src.gui.items import ObjectItem
+        for item in self._scene.items():
+            if isinstance(item, ObjectItem) and item.object_type == old_key:
+                item.object_type = new_key
+                item.update_style()
 
     def _delete_config_type(self, key):
         self.config.delete_object_type(key)

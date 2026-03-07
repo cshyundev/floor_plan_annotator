@@ -35,11 +35,8 @@ class RoomItem(PolygonItem):
         self.setZValue(config.get_ui_value("room", "z_value"))
 
     def get_label_text(self) -> str:
-        config = ConfigManager.instance()
-        type_conf = config.get_room_type(self.room_type)
-        type_name = type_conf.get("name", self.room_type) if type_conf else self.room_type
         display_id = self.room_id if self.room_id else "?"
-        return f"{type_name} ({display_id})"
+        return f"{self.room_type} ({display_id})"
 
     def contextMenuEvent(self, event):
         from PyQt6.QtWidgets import QMenu
@@ -53,7 +50,7 @@ class RoomItem(PolygonItem):
 
         for key in sorted_keys:
             t_data = types[key]
-            action = menu.addAction(t_data["name"])
+            action = menu.addAction(key)
 
             if key == self.room_type:
                 action.setCheckable(True)
