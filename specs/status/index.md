@@ -74,7 +74,7 @@
 ### Development Infrastructure (2026-02-15)
 - Python package structure with pyproject.toml
 - UV-based dependency management
-- Auto-load development data for testing
+- Bundled sample data auto-loaded on startup
 
 ### Project Lifecycle Management — FEAT-006 (2026-02-28)
 - New/Save/Save As with annotations.json fixed-name convention (REQ-026, REQ-030)
@@ -120,6 +120,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
+| BUG-012 | Recent Files 항목이 모두 "annotations.json"으로 표시되고 없는 경로 로드 실패 | GUI / Recent Files | 높음 | REQ-027 | 자동 탐지된 annotations.json이 recent에 추가되어 발생 |
 
 
 ### Improvement
