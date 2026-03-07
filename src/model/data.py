@@ -185,9 +185,11 @@ class MapMetadata:
     free_thresh: float = 0.196
     image_width: int = 0
     image_height: int = 0
+    bounds_min: Optional[List[float]] = None  # [x, y, z] 3D 최솟값 (자동 기록)
+    bounds_max: Optional[List[float]] = None  # [x, y, z] 3D 최댓값 (자동 기록)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "image_path": self.image_path,
             "resolution": self.resolution,
             "origin_x": self.origin_x,
@@ -199,6 +201,11 @@ class MapMetadata:
             "image_width": self.image_width,
             "image_height": self.image_height,
         }
+        if self.bounds_min is not None:
+            d["bounds_min"] = self.bounds_min
+        if self.bounds_max is not None:
+            d["bounds_max"] = self.bounds_max
+        return d
 
     @staticmethod
     def from_dict(d: dict) -> "MapMetadata":
@@ -214,6 +221,8 @@ class MapMetadata:
             free_thresh=d.get("free_thresh", 0.196),
             image_width=d.get("image_width", 0),
             image_height=d.get("image_height", 0),
+            bounds_min=d.get("bounds_min"),
+            bounds_max=d.get("bounds_max"),
         )
 
 
@@ -295,6 +304,10 @@ class ProjectData:
         meta = self.map_metadata
         file_name = os.path.basename(meta.image_path) if meta.image_path else ""
         source: dict = {"file_name": file_name}
+        if meta.bounds_min is not None:
+            source["bounds_min"] = meta.bounds_min
+        if meta.bounds_max is not None:
+            source["bounds_max"] = meta.bounds_max
         if self.data_type == "occupancy_grid" and meta.resolution > 0:
             source["occupancy_grid"] = {
                 "resolution": meta.resolution,

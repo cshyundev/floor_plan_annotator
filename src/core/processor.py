@@ -112,6 +112,12 @@ class SliceEngine:
         """Return fixed 2D footprint bounds (min_x, min_y, max_x, max_y) from full geometry."""
         return self._bounds_2d
 
+    def get_bounds_3d(self):
+        """Return full 3D bounds as ([min_x,min_y,min_z], [max_x,max_y,max_z]) or None."""
+        if self._bounds is None:
+            return None
+        return self._bounds[0].tolist(), self._bounds[1].tolist()
+
     def get_all_points(self):
         """Return all loaded points and colors.
 

@@ -452,9 +452,10 @@ class AnnotationSync3D:
         z_max = z_min + object_item.height_3d
 
         center = (object_item.center.x(), self._to_world_floor_v(object_item.center.y()))
+        angle = -object_item.angle if self._coord_sys.flip_floor_v else object_item.angle
         mesh = self.object_builder.create_object_box(
             center, object_item.width, object_item.height,
-            object_item.angle, z_min, z_max, color,
+            angle, z_min, z_max, color,
             coord_sys=self._coord_sys,
         )
 

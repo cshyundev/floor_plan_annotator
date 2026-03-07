@@ -572,6 +572,9 @@ class MainWindow(QMainWindow):
             meta = MapMetadata()
             meta.image_path = os.path.basename(file_path)
             meta.image_path_absolute = os.path.abspath(file_path)
+            bounds = self.processor.get_bounds_3d()
+            if bounds is not None:
+                meta.bounds_min, meta.bounds_max = bounds
             self._map_metadata = meta
 
             # Auto-detect annotations.json in the same folder (FEAT-006)
