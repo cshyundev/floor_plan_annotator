@@ -89,6 +89,19 @@
 - BUG-008: Warning dialog on load when annotation type keys are not found in config (data_serializer → canvas_2d signal → main_window QMessageBox)
 - BUG-009: Renamed all user-visible "Custom Polygon" labels to "Zone" (properties panel, undo history, status bar, visibility toggle)
 
+### Auto-save — FEAT-009 (2026-03-07)
+- 5-minute QTimer writes `.<name>.autosave.json` alongside the project file when dirty (REQ-029, auto-save only)
+- Auto-save skipped when no project path set or project is clean
+- Autosave file deleted on successful manual save
+- Crash recovery excluded from this implementation
+
+### Recent Files — FEAT-007 (2026-03-07)
+- File menu "Recent Files" submenu tracking last 5 saved/opened annotation files (REQ-027)
+- QSettings-based persistence across app restarts
+- Deduplication (same file moves to front), trim to 5, "Clear Recent Files" action
+- Silent removal of non-existent files with status bar notification
+- Hooked into `_do_save()` and `_detect_annotations_for_3d_file()` for automatic tracking
+
 ### 3D Viewer Object Rotation Fix & IMP-005 (2026-03-07)
 - BUG-011 (3D Object 회전 방향): flip_floor_v 시 angle negate 미적용 버그 수정 (annotation_sync.py)
 - IMP-005: processor.get_bounds_3d() 추가, MapMetadata.bounds_min/max 필드 및 source 직렬화 구현 (REQ-028)
@@ -118,9 +131,6 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| FEAT-007 | Recent Files | main_window | P1 | REQ-027 | QSettings, 최근 5개, Clear 기능 |
-| FEAT-008 | Project JSON Schema v4.0 | model/data, core/io | P1 | REQ-028 | project_name, 타임스탬프 추가, image_path_absolute 제거 |
-| FEAT-009 | Auto-save Recovery | main_window, core/io | P2 | REQ-029 | 5분 주기 자동 저장, 크래시 복구 |
 
 ## In Progress
 

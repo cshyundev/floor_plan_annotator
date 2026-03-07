@@ -81,6 +81,11 @@ class MainWindow(QMainWindow):
         self._3d_file_path = None       # type: str | None  — currently loaded 3D data absolute path
         self._created_at = None         # type: str | None  — ISO 8601, preserved across saves
 
+        # Recent files (FEAT-007)
+        self._recent_files: list[str] = []
+        self._recent_files_menu = None  # populated in create_menu()
+        self._load_recent_files()
+
         # Controls (Dock)
         self.create_controls()
 
@@ -112,6 +117,12 @@ class MainWindow(QMainWindow):
 
         # Menu Bar
         self.create_menu()
+
+        # Auto-save timer (FEAT-009)
+        from PyQt6.QtCore import QTimer
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.timeout.connect(self._do_autosave)
+        self._load_autosave_settings()  # interval + enabled 설정
 
     # ── Lifecycle helpers (FEAT-006) ────────────────────────────────────────
 
@@ -167,6 +178,9 @@ class MainWindow(QMainWindow):
         load_occ_action.triggered.connect(self.load_occupancy_grid)
         file_menu.addAction(load_occ_action)
 
+        self._recent_files_menu = file_menu.addMenu("Recent Files")
+        self._update_recent_files_menu()
+
         file_menu.addSeparator()
 
         save_proj_action = QAction(config.get_string("menu", "save_project"), self)
@@ -185,11 +199,165 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # Edit menu
-        edit_menu = menubar.addMenu("Edit")
+        # Tools menu
+        tools_menu = menubar.addMenu("Tools")
         manage_types_action = QAction("Manage Types...", self)
         manage_types_action.triggered.connect(self._open_type_editor)
-        edit_menu.addAction(manage_types_action)
+        tools_menu.addAction(manage_types_action)
+
+        tools_menu.addSeparator()
+
+        prefs_action = QAction("Preferences...", self)
+        prefs_action.triggered.connect(self._open_preferences)
+        tools_menu.addAction(prefs_action)
+
+    # ── Recent Files (FEAT-007) ────────────────────────────────────────────
+
+    def _load_recent_files(self) -> None:
+        from PyQt6.QtCore import QSettings
+        settings = QSettings()
+        paths = settings.value("recentFiles", defaultValue=[], type=list) or []
+        self._recent_files = [p for p in paths if isinstance(p, str)]
+
+    def _save_recent_files(self) -> None:
+        from PyQt6.QtCore import QSettings
+        settings = QSettings()
+        settings.setValue("recentFiles", self._recent_files)
+
+    def _add_to_recent_files(self, path: str) -> None:
+        abs_path = os.path.abspath(path)
+        if abs_path in self._recent_files:
+            self._recent_files.remove(abs_path)
+        self._recent_files.insert(0, abs_path)
+        self._recent_files = self._recent_files[:5]
+        self._save_recent_files()
+        self._update_recent_files_menu()
+
+    def _update_recent_files_menu(self) -> None:
+        if self._recent_files_menu is None:
+            return
+        self._recent_files_menu.clear()
+        if not self._recent_files:
+            no_action = QAction("(No recent files)", self)
+            no_action.setEnabled(False)
+            self._recent_files_menu.addAction(no_action)
+            return
+        for path in self._recent_files:
+            name = os.path.basename(path)
+            action = QAction(name, self)
+            action.setToolTip(path)
+            action.setStatusTip(path)
+            action.triggered.connect(lambda checked, p=path: self._open_recent_file(p))
+            self._recent_files_menu.addAction(action)
+        self._recent_files_menu.addSeparator()
+        clear_action = QAction("Clear Recent Files", self)
+        clear_action.triggered.connect(self._clear_recent_files)
+        self._recent_files_menu.addAction(clear_action)
+
+    def _open_recent_file(self, path: str) -> None:
+        if not os.path.exists(path):
+            if path in self._recent_files:
+                self._recent_files.remove(path)
+            self._save_recent_files()
+            self._update_recent_files_menu()
+            self.statusBar().showMessage(
+                f"File not found: {os.path.basename(path)}", 4000
+            )
+            return
+        if not self._confirm_discard_changes():
+            return
+        self._load_project_file(path)
+
+    def _load_project_file(self, path: str) -> None:
+        from src.core.io import ProjectIO
+        try:
+            proj = ProjectIO.load_project(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Open Error", str(e))
+            return
+        self._current_file_path = path
+        self.undo_stack.clear()
+        self.canvas_2d.background_item = None
+        self.canvas_2d.load_from_data(proj)
+        if proj.coordinate_system:
+            cs = proj.coordinate_system
+            self.coord_sys_widget.set_coordinate_system(cs)
+            self._apply_coordinate_system(cs)
+        if proj.map_metadata:
+            self._restore_data_source(proj.map_metadata, path)
+        elif self.processor._points is not None:
+            self._update_2d_slice()
+        self.undo_stack.setClean()
+        self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+        self._update_title_bar()
+        self._add_to_recent_files(path)
+
+    def _clear_recent_files(self) -> None:
+        self._recent_files = []
+        self._save_recent_files()
+        self._update_recent_files_menu()
+
+    # ── End Recent Files ───────────────────────────────────────────────────
+
+    # ── Auto-save (FEAT-009) ───────────────────────────────────────────────
+
+    def _autosave_path(self) -> str | None:
+        if not self._current_file_path:
+            return None
+        folder = os.path.dirname(self._current_file_path)
+        name = os.path.basename(self._current_file_path)
+        return os.path.join(folder, f".{name}.autosave.json")
+
+    def _do_autosave(self) -> None:
+        if not self._current_file_path:
+            return
+        if self.undo_stack.isClean():
+            return
+        path = self._autosave_path()
+        if path is None:
+            return
+        from src.core.io import ProjectIO
+        from datetime import datetime, timezone
+        try:
+            project_data = self.canvas_2d.save_to_data()
+            project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
+            if self._map_metadata is not None:
+                project_data.map_metadata = self._map_metadata
+            if not self._created_at:
+                self._created_at = datetime.now(timezone.utc).isoformat()
+            project_data.created_at = self._created_at
+            project_data.modified_at = datetime.now(timezone.utc).isoformat()
+            ProjectIO.save_project(project_data, path)
+        except Exception:
+            pass  # 실패는 무시 — 사용자 작업 방해 금지
+
+    def _delete_autosave(self) -> None:
+        path = self._autosave_path()
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def _load_autosave_settings(self) -> None:
+        from PyQt6.QtCore import QSettings
+        s = QSettings()
+        enabled = s.value("autosave/enabled", defaultValue=True, type=bool)
+        interval_ms = s.value("autosave/interval_minutes", defaultValue=5, type=int) * 60 * 1000
+        self._autosave_timer.setInterval(interval_ms)
+        if enabled:
+            self._autosave_timer.start()
+        else:
+            self._autosave_timer.stop()
+
+    def _open_preferences(self) -> None:
+        from src.gui.preferences_dialog import PreferencesDialog
+        dlg = PreferencesDialog(self)
+        if dlg.exec():
+            dlg.save_settings()
+            self._load_autosave_settings()
+
+    # ── End Auto-save ──────────────────────────────────────────────────────
 
     def _do_save(self, path: str) -> bool:
         """Write annotations to *path*. Sets _current_file_path and marks stack clean.
@@ -227,6 +395,8 @@ class MainWindow(QMainWindow):
             self._current_file_path = path
             self.undo_stack.setClean()
             self._update_title_bar()
+            self._add_to_recent_files(path)
+            self._delete_autosave()
             return True
         except Exception as e:
             QMessageBox.critical(self, "Save Error", str(e))
@@ -292,6 +462,7 @@ class MainWindow(QMainWindow):
             self.coord_sys_widget.set_coordinate_system(cs)
             self._apply_coordinate_system(cs)
         self._current_file_path = candidate
+        self._add_to_recent_files(candidate)
         self.undo_stack.setClean()
         # BUG-003: restore 2D background after load_from_data() cleared the scene.
         # background_item was set to None before load_from_data() (required to prevent

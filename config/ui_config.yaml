@@ -94,3 +94,8 @@ annotation_3d:
   enable_custom_polygon_planes: true  # Toggle custom polygon planes in 3D viewer
   enable_object_boxes: true     # Toggle object OBB boxes in 3D viewer
   object_height: 0.5            # Meters - virtual object box height
+
+
+autosave:
+  enabled: true          # Default: auto-save enabled (overridden by QSettings at runtime)
+  interval_minutes: 5    # Default interval in minutes (overridden by QSettings at runtime)

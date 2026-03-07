@@ -6,6 +6,9 @@ from src.core.config import apply_theme
 
 def main():
     app = QApplication(sys.argv)
+    from PyQt6.QtCore import QCoreApplication
+    QCoreApplication.setOrganizationName("FloorPlanAnnotator")
+    QCoreApplication.setApplicationName("FloorPlanAnnotator")
     apply_theme(app)
     window = MainWindow()
     window.show()

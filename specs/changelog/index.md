@@ -1,5 +1,8 @@
 # Changelog Index
 
+- 2026-03-07 [Added] Tools menu with Preferences dialog: auto-save enable/disable toggle and interval setting (1–60 min), persisted via QSettings; Edit menu renamed to Tools
+- 2026-03-07 [Added] FEAT-009 Auto-save: 5-minute QTimer periodically writes `.<name>.autosave.json` when dirty; autosave file deleted on successful manual save (REQ-029, auto-save only)
+- 2026-03-07 [Added] FEAT-007 Recent Files: File menu "Recent Files" submenu tracking last 5 saved/opened projects, persisted via QSettings, with deduplication and Clear option (REQ-027)
 - 2026-03-07 [Fixed] BUG-008 warn on unknown annotation type keys after project load: warning dialog lists type keys not found in config (BUG-008)
 - 2026-03-07 [Fixed] BUG-009 rename user-visible "Custom Polygon" labels to "Zone" (properties panel, undo history, status bar, visibility toggle)
 - 2026-03-07 [Removed] Coordinate system "Custom..." option: removed custom axes UI and related logic from CoordinateSystemWidget; presets (ROS/OpenCV/OpenGL) only (BUG-007)
