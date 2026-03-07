@@ -12,6 +12,7 @@ from src.core.input_context import InputContext
 class Canvas2D(QGraphicsView):
     status_message = pyqtSignal(str)
     tool_changed = pyqtSignal(str)
+    unknown_types_warning = pyqtSignal(list)
 
     def __init__(self, main_window=None):
         super().__init__()
@@ -434,4 +435,6 @@ class Canvas2D(QGraphicsView):
         Args:
             data: ProjectData instance to load
         """
-        self.data_serializer.load_from_data(data)
+        unknown = self.data_serializer.load_from_data(data)
+        if unknown:
+            self.unknown_types_warning.emit(unknown)

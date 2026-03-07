@@ -63,11 +63,14 @@ class DataSerializer:
 
         return data
 
-    def load_from_data(self, data):
+    def load_from_data(self, data) -> list[str]:
         """Recreate scene items from ProjectData format.
 
         Args:
             data: ProjectData instance to load
+
+        Returns:
+            List of warning messages for type keys not found in config.
         """
         self.canvas.scene.clear()
         if hasattr(self.canvas, '_undo_stack') and self.canvas._undo_stack:
@@ -93,20 +96,24 @@ class DataSerializer:
             nodes_at_pos[key] = node
             return node
 
+        unknown: list[str] = []
+
         # Recreate walls
         self._load_walls(data, get_or_create_node)
 
         # Recreate rooms
-        self._load_rooms(data, get_or_create_node)
+        self._load_rooms(data, get_or_create_node, unknown)
 
         # Recreate custom polygons
-        self._load_custom_polygons(data, get_or_create_node)
+        self._load_custom_polygons(data, get_or_create_node, unknown)
 
         # Recreate objects
-        self._load_objects(data)
+        self._load_objects(data, unknown)
 
         # Restore background if it exists
         self._restore_background()
+
+        return unknown
 
     def _reset_room_id_counter(self, data):
         """Reset the room ID counter based on existing room IDs in data."""
@@ -148,11 +155,14 @@ class DataSerializer:
             edge = EdgeItem(n1, n2)
             self.canvas.scene.addItem(edge)
 
-    def _load_rooms(self, data, get_or_create_node):
+    def _load_rooms(self, data, get_or_create_node, unknown: list[str]):
         """Load rooms from ProjectData."""
         from src.gui.items import RoomItem, EdgeItem
 
         for room in data.rooms:
+            if self._config.get_room_type(room.room_type) is None:
+                unknown.append(f"Room type '{room.room_type}'")
+
             nodes = []
             for p in room.points:
                 n = get_or_create_node(p.x, p.y)
@@ -165,11 +175,14 @@ class DataSerializer:
                 # Ensure edges exist for room boundary
                 self._create_room_boundary_edges(nodes)
 
-    def _load_custom_polygons(self, data, get_or_create_node):
+    def _load_custom_polygons(self, data, get_or_create_node, unknown: list[str]):
         """Load custom polygons from ProjectData."""
         from src.gui.items import CustomPolygonItem
 
         for cp in data.custom_polygons:
+            if self._config.get_custom_polygon_type(cp.polygon_type) is None:
+                unknown.append(f"Zone type '{cp.polygon_type}'")
+
             nodes = []
             for p in cp.points:
                 n = get_or_create_node(p.x, p.y)
@@ -180,12 +193,14 @@ class DataSerializer:
                 self.canvas.scene.addItem(poly)
                 self._create_room_boundary_edges(nodes)
 
-    def _load_objects(self, data):
+    def _load_objects(self, data, unknown: list[str]):
         """Load objects from ProjectData."""
         from src.gui.items import ObjectItem
         from PyQt6.QtCore import QPointF
 
         for obj in data.objects:
+            if self._config.get_object_type(obj.object_type) is None:
+                unknown.append(f"Object type '{obj.object_type}'")
             center = QPointF(obj.center.x, obj.center.y)
 
             # Backward compat: if z_min/z_max are AnnotationBase defaults,

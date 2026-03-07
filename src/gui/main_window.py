@@ -502,6 +502,7 @@ class MainWindow(QMainWindow):
         # Status Bar
         self.setStatusBar(QStatusBar(self))
         self.canvas_2d.status_message.connect(self.statusBar().showMessage)
+        self.canvas_2d.unknown_types_warning.connect(self._on_unknown_types)
 
         # Auto-load dummy data for development
         dummy_paths = ["data/point_cloud/layout_dummy.ply", "data/layout_dummy.ply", "layout_dummy.ply"]
@@ -667,6 +668,16 @@ class MainWindow(QMainWindow):
         """
         if self.annotation_sync:
             self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+
+    def _on_unknown_types(self, entries: list[str]):
+        """Warn the user about type keys not found in config after loading."""
+        from PyQt6.QtWidgets import QMessageBox
+        unique = sorted(set(entries))
+        text = "\n".join(f"• {e}" for e in unique)
+        QMessageBox.warning(
+            self, "Unknown Annotation Types",
+            f"The following types are not defined in config and will use fallback style:\n\n{text}",
+        )
 
     def _on_anno_visibility_changed(self, category: str, state: int):
         """Handle annotation category visibility checkbox change."""
