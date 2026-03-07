@@ -219,8 +219,8 @@ class PropertiesPanel(QWidget):
                 self.poly_id_label.setText(item.room_id or "?")
                 self._populate_combo(self.poly_subtype_combo, "room", item.room_type)
             else:
-                self.header_label.setText("Custom Polygon")
-                self.poly_type_label.setText("Custom Polygon")
+                self.header_label.setText("Zone")
+                self.poly_type_label.setText("Zone")
                 self.poly_id_label.setText(item.polygon_id or "?")
                 self._populate_combo(self.poly_subtype_combo, "custom_polygon", item.polygon_type)
             self.poly_info_label.setText(str(len(item.nodes)))

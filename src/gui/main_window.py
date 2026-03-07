@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
 
         self._anno_checkboxes = {}
         for category, label in [("room", "Room"), ("wall", "Wall"),
-                                 ("custom_polygon", "Custom Polygon"),
+                                 ("custom_polygon", "Zone"),
                                  ("object", "Object")]:
             cb = QCheckBox(label)
             cb.setChecked(True)

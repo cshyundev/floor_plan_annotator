@@ -84,7 +84,7 @@ class MoveNodesCommand(QUndoCommand):
 
 class ChangeCustomPolygonTypeCommand(QUndoCommand):
     def __init__(self, polygon_item, old_type, new_type):
-        super().__init__(f"Change Custom Polygon Type to {new_type}")
+        super().__init__(f"Change Zone Type to {new_type}")
         self.polygon_item = polygon_item
         self.old_type = old_type
         self.new_type = new_type

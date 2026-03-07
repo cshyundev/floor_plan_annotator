@@ -84,6 +84,10 @@
 - Unsaved-change confirmation on New / Load / app close
 - BUG-003 fixed: 2D canvas projection and 3D viewer annotations missing after loading annotations.json
 
+### BUG-007, BUG-009 Fixes (2026-03-07)
+- BUG-007: Removed "Custom..." coordinate system option; only ROS/OpenCV/OpenGL presets supported
+- BUG-009: Renamed all user-visible "Custom Polygon" labels to "Zone" (properties panel, undo history, status bar, visibility toggle)
+
 ### Type Name = Key Unification — BUG-004, BUG-005 (2026-03-02)
 - Type name is the key: removed separate `name` field from config YAML (BUG-004)
 - New types use user-entered name directly as key instead of random UUID
@@ -98,9 +102,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
-| BUG-007 | Coordinate System의 Custom 옵션 제거 필요 | gui/coordinate_system_widget, core/coordinate_system | P1 | | 프리셋(ros/opencv/opengl)만 지원. Custom 좌표계 UI 및 로직 제거 |
 | BUG-008 | config에 없는 type key 로드 시 경고 없음 | gui/data_serializer, model/data | P1 | | annotations.json에 config에 존재하지 않는 type key가 있을 때 무경고로 fallback 스타일 적용. 사용자에게 알림 필요 |
-| BUG-009 | Custom Polygon 흔적이 아직도 존재 | - | P1 | |
 
 ### Improvement
 

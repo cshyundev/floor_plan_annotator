@@ -269,12 +269,12 @@ class DrawCustomPolygonTool(DrawPolygonTool):
         )
 
         all_items = new_nodes + [polygon_item]
-        cmd = AddItemCommand(self.scene, all_items, "Add Custom Polygon")
+        cmd = AddItemCommand(self.scene, all_items, "Add Zone")
         self.canvas.push_command(cmd)
 
         self._shared_nodes.clear()
         self.current_nodes = []
-        self.canvas.status_message.emit(f"Custom polygon '{selected_key}' created.")
+        self.canvas.status_message.emit(f"Zone '{selected_key}' created.")
 
     def _select_custom_polygon_type(self):
         from PyQt6.QtGui import QCursor  # noqa: QCursor is in QtGui

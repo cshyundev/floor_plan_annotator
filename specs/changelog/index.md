@@ -1,5 +1,6 @@
 # Changelog Index
 
+- 2026-03-07 [Fixed] BUG-009 rename user-visible "Custom Polygon" labels to "Zone" (properties panel, undo history, status bar, visibility toggle)
 - 2026-03-07 [Removed] Coordinate system "Custom..." option: removed custom axes UI and related logic from CoordinateSystemWidget; presets (ROS/OpenCV/OpenGL) only (BUG-007)
 - 2026-02-28 [Fixed] 3D viewer annotations missing after loading annotations.json: renderer created asynchronously (200ms timer), so add on_renderer_ready callback in Viewer3D and re-sync annotations once renderer is ready
 - 2026-02-28 [Fixed] 2D canvas background missing after loading annotations.json: add explicit _update_2d_slice() call in _detect_annotations_for_3d_file() and open_project() after data source restore (BUG-003)
