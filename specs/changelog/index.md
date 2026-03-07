@@ -1,6 +1,5 @@
 # Changelog Index
 
-- 2026-03-07 [Fixed] BUG-012 Recent Files: auto-detected annotations.json no longer added to recent files list; only files explicitly opened or saved by the user are recorded (REQ-027)
 - 2026-03-07 [Fixed] Type selection popup buttons (Room/Zone/Object) left-align text so labels line up regardless of length; Properties Panel form labels also left-aligned
 - 2026-03-07 [Added] Tools menu with Preferences dialog: auto-save enable/disable toggle and interval setting (1–60 min), persisted via QSettings; Edit menu renamed to Tools
 - 2026-03-07 [Added] FEAT-009 Auto-save: 5-minute QTimer periodically writes `.<name>.autosave.json` when dirty; autosave file deleted on successful manual save (REQ-029, auto-save only)
