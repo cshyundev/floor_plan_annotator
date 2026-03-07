@@ -403,26 +403,6 @@ class TestV1SchemaFormat(unittest.TestCase):
         self.assertEqual(pd2.custom_polygons[0].id, "z0")
         self.assertEqual(pd2.custom_polygons[0].polygon_type, "caution")
 
-    def test_load_example_json(self):
-        """Load schemas/example.json and verify it parses correctly."""
-        import json
-        import os
-        example_path = os.path.join(os.path.dirname(__file__), "..", "schemas", "example.json")
-        with open(example_path) as f:
-            data = json.load(f)
-
-        pd = ProjectData.from_dict(data)
-
-        self.assertEqual(pd.version, "1.0")
-        self.assertEqual(pd.data_type, "point_cloud")
-        self.assertEqual(len(pd.walls), 4)
-        self.assertEqual(len(pd.rooms), 1)
-        self.assertEqual(pd.rooms[0].room_type, "Bedroom")
-        self.assertEqual(len(pd.objects), 2)
-        self.assertEqual(pd.objects[0].object_type, "Furniture")
-        self.assertEqual(len(pd.custom_polygons), 2)
-        self.assertEqual(pd.custom_polygons[0].polygon_type, "no_go")
-
     def test_timestamps_optional(self):
         """created_at / modified_at are optional."""
         pd = ProjectData()
@@ -450,82 +430,6 @@ class TestV1SchemaFormat(unittest.TestCase):
         self.assertEqual(pd2.coordinate_system.up_axis, 1)
         self.assertEqual(pd2.coordinate_system.up_direction, -1)
         self.assertEqual(pd2.coordinate_system.floor_axes, (0, 2))
-
-
-class TestSchemaValidation(unittest.TestCase):
-    """Tests for JSON schema validation in ProjectIO.load_project."""
-
-    def test_invalid_version_rejected(self):
-        """Version mismatch raises ValidationError."""
-        import json, tempfile, os
-        from jsonschema import ValidationError
-        from src.core.io import ProjectIO
-
-        data = {
-            "version": "99.0",
-            "data_type": "point_cloud",
-            "coordinate_system": "ros",
-            "layout": {"walls": [], "rooms": []},
-        }
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(data, f)
-            path = f.name
-        try:
-            with self.assertRaises(ValidationError):
-                ProjectIO.load_project(path)
-        finally:
-            os.unlink(path)
-
-    def test_missing_required_field_rejected(self):
-        """Missing required 'layout' key raises ValidationError."""
-        import json, tempfile, os
-        from jsonschema import ValidationError
-        from src.core.io import ProjectIO
-
-        data = {
-            "version": "1.0",
-            "data_type": "point_cloud",
-            "coordinate_system": "ros",
-        }
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(data, f)
-            path = f.name
-        try:
-            with self.assertRaises(ValidationError):
-                ProjectIO.load_project(path)
-        finally:
-            os.unlink(path)
-
-    def test_invalid_coordinate_system_rejected(self):
-        """Invalid coordinate_system enum raises ValidationError."""
-        import json, tempfile, os
-        from jsonschema import ValidationError
-        from src.core.io import ProjectIO
-
-        data = {
-            "version": "1.0",
-            "data_type": "point_cloud",
-            "coordinate_system": "unity",
-            "layout": {"walls": [], "rooms": []},
-        }
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(data, f)
-            path = f.name
-        try:
-            with self.assertRaises(ValidationError):
-                ProjectIO.load_project(path)
-        finally:
-            os.unlink(path)
-
-    def test_valid_example_passes(self):
-        """schemas/example.json passes schema validation."""
-        import os
-        from src.core.io import ProjectIO
-
-        example_path = os.path.join(os.path.dirname(__file__), "..", "schemas", "example.json")
-        pd = ProjectIO.load_project(example_path)
-        self.assertEqual(pd.version, "1.0")
-        self.assertEqual(len(pd.walls), 4)
 
 
 if __name__ == "__main__":

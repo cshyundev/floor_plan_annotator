@@ -27,6 +27,15 @@ class PreferencesDialog(QDialog):
         # SpinBox enabled state follows checkbox
         self._autosave_enabled.toggled.connect(self._autosave_interval.setEnabled)
 
+        # Startup group
+        startup_group = QGroupBox("Startup")
+        startup_form = QFormLayout(startup_group)
+
+        self._autoload_sample = QCheckBox()
+        startup_form.addRow("Load sample data on startup:", self._autoload_sample)
+
+        layout.addWidget(startup_group)
+
         # Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -45,7 +54,11 @@ class PreferencesDialog(QDialog):
         self._autosave_interval.setValue(interval)
         self._autosave_interval.setEnabled(enabled)
 
+        autoload = s.value("startup/autoload_sample", defaultValue=True, type=bool)
+        self._autoload_sample.setChecked(autoload)
+
     def save_settings(self):
         s = QSettings()
         s.setValue("autosave/enabled", self._autosave_enabled.isChecked())
         s.setValue("autosave/interval_minutes", self._autosave_interval.value())
+        s.setValue("startup/autoload_sample", self._autoload_sample.isChecked())

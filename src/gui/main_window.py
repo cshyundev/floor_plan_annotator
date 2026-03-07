@@ -243,7 +243,8 @@ class MainWindow(QMainWindow):
             self._recent_files_menu.addAction(no_action)
             return
         for path in self._recent_files:
-            name = os.path.basename(path)
+            parent = os.path.basename(os.path.dirname(path))
+            name = f"{parent}/{os.path.basename(path)}" if parent else os.path.basename(path)
             action = QAction(name, self)
             action.setToolTip(path)
             action.setStatusTip(path)
@@ -266,7 +267,7 @@ class MainWindow(QMainWindow):
             return
         if not self._confirm_discard_changes():
             return
-        self._load_project_file(path)
+        self.load_data(path)
 
     def _load_project_file(self, path: str) -> None:
         from src.core.io import ProjectIO
@@ -290,7 +291,6 @@ class MainWindow(QMainWindow):
         self.undo_stack.setClean()
         self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
         self._update_title_bar()
-        self._add_to_recent_files(path)
 
     def _clear_recent_files(self) -> None:
         self._recent_files = []
@@ -395,7 +395,8 @@ class MainWindow(QMainWindow):
             self._current_file_path = path
             self.undo_stack.setClean()
             self._update_title_bar()
-            self._add_to_recent_files(path)
+            if self._3d_file_path:
+                self._add_to_recent_files(self._3d_file_path)
             self._delete_autosave()
             return True
         except Exception as e:
@@ -462,7 +463,6 @@ class MainWindow(QMainWindow):
             self.coord_sys_widget.set_coordinate_system(cs)
             self._apply_coordinate_system(cs)
         self._current_file_path = candidate
-        self._add_to_recent_files(candidate)
         self.undo_stack.setClean()
         # BUG-003: restore 2D background after load_from_data() cleared the scene.
         # background_item was set to None before load_from_data() (required to prevent
@@ -675,19 +675,12 @@ class MainWindow(QMainWindow):
         self.canvas_2d.status_message.connect(self.statusBar().showMessage)
         self.canvas_2d.unknown_types_warning.connect(self._on_unknown_types)
 
-        # Auto-load dummy data for development
-        dummy_paths = ["data/point_cloud/layout_dummy.ply", "data/layout_dummy.ply", "layout_dummy.ply"]
-        target_path = None
-        for p in dummy_paths:
-            if os.path.exists(p):
-                target_path = p
-                break
-
-        if target_path:
-            print(f"Auto-loading {target_path} for development...")
-            # Use QTimer to delay load to ensure window and renderer are ready
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(1000, lambda: self.load_data(target_path))
+        # Load bundled sample data on startup (can be disabled in Preferences)
+        from PyQt6.QtCore import QSettings, QTimer
+        if QSettings().value("startup/autoload_sample", defaultValue=True, type=bool):
+            sample_path = "data/sample/sample.ply"
+            if os.path.exists(sample_path):
+                QTimer.singleShot(1000, lambda: self.load_data(sample_path))
 
     def _on_tool_action(self, tool_name):
         self.canvas_2d.set_tool(tool_name)
@@ -750,6 +743,7 @@ class MainWindow(QMainWindow):
 
             # Auto-detect annotations.json in the same folder (FEAT-006)
             self._3d_file_path = os.path.abspath(file_path)
+            self._add_to_recent_files(self._3d_file_path)
             self._detect_annotations_for_3d_file(self._3d_file_path)
             self._update_title_bar()
 
@@ -1042,6 +1036,7 @@ class MainWindow(QMainWindow):
         # Auto-detect annotations.json in the same folder (FEAT-006)
         if metadata.image_path_absolute:
             self._3d_file_path = metadata.image_path_absolute
+            self._add_to_recent_files(metadata.image_path_absolute)
             self._detect_annotations_for_3d_file(metadata.image_path_absolute)
             self._update_title_bar()
 

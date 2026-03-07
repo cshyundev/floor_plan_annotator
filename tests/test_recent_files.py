@@ -83,7 +83,7 @@ class TestOpenRecentFile(unittest.TestCase):
     def setUp(self):
         self.stub = _make_stub()
         self.stub._confirm_discard_changes = MagicMock(return_value=True)
-        self.stub._load_project_file = MagicMock()
+        self.stub.load_data = MagicMock()
         self.stub._open_recent_file = MainWindow._open_recent_file.__get__(self.stub)
         self.stub._status_msg = None
         status_bar = MagicMock()
@@ -109,20 +109,20 @@ class TestOpenRecentFile(unittest.TestCase):
         self.assertIsNotNone(self.stub._status_msg)
         self.assertIn("path.json", self.stub._status_msg)
 
-    def test_existing_file_calls_load_project_file(self):
-        path = "/exists/annotations.json"
+    def test_existing_file_calls_load_data(self):
+        path = "/exists/model.ply"
         self.stub._recent_files = [path]
         with patch("os.path.exists", return_value=True):
             self.stub._open_recent_file(path)
-        self.stub._load_project_file.assert_called_once_with(path)
+        self.stub.load_data.assert_called_once_with(path)
 
     def test_discard_changes_cancelled_skips_load(self):
-        path = "/exists/annotations.json"
+        path = "/exists/model.ply"
         self.stub._recent_files = [path]
         self.stub._confirm_discard_changes.return_value = False
         with patch("os.path.exists", return_value=True):
             self.stub._open_recent_file(path)
-        self.stub._load_project_file.assert_not_called()
+        self.stub.load_data.assert_not_called()
 
 
 class TestLoadSaveRecentFilesQSettings(unittest.TestCase):

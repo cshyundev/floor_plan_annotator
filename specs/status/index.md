@@ -120,6 +120,7 @@
 
 | ID | 제목 | 관련 영역 | 우선순위 | 관련 REQ | 비고 |
 |----|------|----------|---------|---------|------|
+| BUG-012 | Recent Files 항목이 모두 "annotations.json"으로 표시되고 없는 경로 로드 실패 | GUI / Recent Files | 높음 | REQ-027 | basename만 표시 + auto-detect가 recent에 추가됨 |
 
 
 ### Improvement
