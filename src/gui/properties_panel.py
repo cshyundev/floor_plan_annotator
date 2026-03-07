@@ -60,10 +60,15 @@ class PropertiesPanel(QWidget):
 
         layout.addWidget(self.stack)
 
+    def _make_form(self, widget):
+        form = QFormLayout(widget)
+        form.setContentsMargins(0, 4, 0, 0)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        return form
+
     def _init_object_page(self):
         self.form_widget_object = QWidget()
-        form = QFormLayout(self.form_widget_object)
-        form.setContentsMargins(0, 4, 0, 0)
+        form = self._make_form(self.form_widget_object)
 
         self.obj_type_label = QLabel()
         form.addRow("Category:", self.obj_type_label)
@@ -109,8 +114,7 @@ class PropertiesPanel(QWidget):
 
     def _init_wall_page(self):
         self.form_widget_wall = QWidget()
-        form = QFormLayout(self.form_widget_wall)
-        form.setContentsMargins(0, 4, 0, 0)
+        form = self._make_form(self.form_widget_wall)
 
         self.wall_type_label = QLabel()
         form.addRow("Category:", self.wall_type_label)
@@ -136,8 +140,7 @@ class PropertiesPanel(QWidget):
 
     def _init_polygon_page(self):
         self.form_widget_polygon = QWidget()
-        form = QFormLayout(self.form_widget_polygon)
-        form.setContentsMargins(0, 4, 0, 0)
+        form = self._make_form(self.form_widget_polygon)
 
         self.poly_type_label = QLabel()
         form.addRow("Category:", self.poly_type_label)

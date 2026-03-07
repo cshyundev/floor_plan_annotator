@@ -31,6 +31,7 @@ class CustomPolygonTypePopup(QDialog):
             btn.setIcon(QIcon(pixmap))
             btn.setIconSize(QSize(16, 16))
 
+            btn.setStyleSheet("text-align: left; padding-left: 4px;")
             btn.clicked.connect(lambda checked, k=key: self._on_select(k))
             layout.addWidget(btn)
 
