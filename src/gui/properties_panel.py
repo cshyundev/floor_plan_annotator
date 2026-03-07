@@ -161,7 +161,13 @@ class PropertiesPanel(QWidget):
     # ── Selection handling ──
 
     def _on_selection_changed(self):
-        selected = self.canvas.scene.selectedItems()
+        if self.canvas.scene is None:
+            return
+        try:
+            selected = self.canvas.scene.selectedItems()
+        except RuntimeError:
+            # Scene C++ object may be in the process of being cleared
+            return
         annotations = [
             item for item in selected
             if isinstance(item, (RoomItem, CustomPolygonItem, ObjectItem, EdgeItem))
