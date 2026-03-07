@@ -28,7 +28,7 @@ class DataSerializer:
         items = self.canvas.scene.items()
 
         for item in items:
-            if isinstance(item, EdgeItem):
+            if isinstance(item, EdgeItem) and not getattr(item, 'is_boundary_edge', False):
                 p1 = item.start_node.pos()
                 p2 = item.end_node.pos()
                 wall = Wall(
@@ -225,21 +225,28 @@ class DataSerializer:
             self.canvas.scene.addItem(obj_item)
 
     def _create_room_boundary_edges(self, nodes):
-        """Create edges for room boundary if they don't already exist."""
+        """Create edges for room boundary if they don't already exist.
+
+        If an edge already exists between two boundary nodes (e.g. a wall
+        saved before boundary-edge filtering was in place), mark it as a
+        boundary edge so it is excluded from 3D wall rendering.
+        """
         from src.gui.items import EdgeItem
 
         for i in range(len(nodes)):
             n_start = nodes[i]
             n_end = nodes[(i + 1) % len(nodes)]
 
-            # Check if edge exists
-            existing_edge = False
+            # Check if edge exists; if so, mark it as boundary
+            existing_edge = None
             for edge in n_start.edges:
                 if edge.end_node == n_end or edge.start_node == n_end:
-                    existing_edge = True
+                    existing_edge = edge
                     break
 
-            if not existing_edge:
+            if existing_edge is not None:
+                existing_edge.is_boundary_edge = True
+            else:
                 edge = EdgeItem(n_start, n_end)
                 edge.is_boundary_edge = True
                 self.canvas.scene.addItem(edge)

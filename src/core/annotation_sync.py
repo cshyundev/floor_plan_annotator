@@ -350,6 +350,8 @@ class AnnotationSync3D:
         """
         if not self._enabled:
             return
+        if getattr(edge_item, 'is_boundary_edge', False):
+            return
         if not self.config.get_ui_value("annotation_3d", "enable_wall_geometry"):
             return
 
@@ -536,7 +538,8 @@ class AnnotationSync3D:
             if isinstance(item, RoomItem):
                 self.sync_room_annotation(item)
             elif isinstance(item, EdgeItem):
-                self.sync_wall_annotation(item)
+                if not getattr(item, 'is_boundary_edge', False):
+                    self.sync_wall_annotation(item)
             elif isinstance(item, CustomPolygonItem):
                 self.sync_custom_polygon_annotation(item)
             elif isinstance(item, ObjectItem):
