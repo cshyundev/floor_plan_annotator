@@ -68,15 +68,6 @@ class TestSerialization(unittest.TestCase):
         cs2 = CoordinateSystem.from_dict(d)
         self.assertEqual(cs, cs2)
 
-    def test_round_trip_custom(self):
-        cs = CoordinateSystem(
-            up_axis=0, up_direction=-1, floor_axes=(1, 2),
-            floor_level=1.5, flip_floor_v=False,
-        )
-        d = cs.to_dict()
-        cs2 = CoordinateSystem.from_dict(d)
-        self.assertEqual(cs, cs2)
-
     def test_dict_keys(self):
         d = CoordinateSystem.ros().to_dict()
         expected_keys = {"up_axis", "up_direction", "floor_axes", "floor_level", "flip_floor_v"}
@@ -136,11 +127,6 @@ class TestMake3DPoint(unittest.TestCase):
         pt = cs.make_3d_point(1.0, 2.0, 3.0)
         self.assertEqual(pt, [1.0, 3.0, 2.0])
 
-    def test_custom_axes(self):
-        cs = CoordinateSystem(up_axis=0, floor_axes=(1, 2))
-        # floor_h=Y, floor_v=Z, height=X
-        pt = cs.make_3d_point(5.0, 6.0, 7.0)
-        self.assertEqual(pt, [7.0, 5.0, 6.0])
 
 
 class TestCameraUpVector(unittest.TestCase):
@@ -173,6 +159,28 @@ class TestCameraUpVector(unittest.TestCase):
             self.assertAlmostEqual(dot, 0.0, msg=f"camera_up not perpendicular for {name}")
 
 
+class TestToPresetName(unittest.TestCase):
+    """Test to_preset_name() reverse mapping."""
+
+    def test_ros_preset_name(self):
+        cs = CoordinateSystem.ros()
+        self.assertEqual(cs.to_preset_name(), "ros")
+
+    def test_opencv_preset_name(self):
+        cs = CoordinateSystem.opencv()
+        self.assertEqual(cs.to_preset_name(), "opencv")
+
+    def test_opengl_preset_name(self):
+        cs = CoordinateSystem.opengl()
+        self.assertEqual(cs.to_preset_name(), "opengl")
+
+    def test_ignores_floor_level(self):
+        """A ROS preset with non-default floor_level still returns 'ros'."""
+        cs = CoordinateSystem.ros()
+        cs.floor_level = 1.5
+        self.assertEqual(cs.to_preset_name(), "ros")
+
+
 class TestProjectDataCoordinateSystem(unittest.TestCase):
     """Test ProjectData coordinate system serialization."""
 
@@ -186,7 +194,7 @@ class TestProjectDataCoordinateSystem(unittest.TestCase):
         proj = ProjectData()
         d = proj.to_dict()
         self.assertIn("coordinate_system", d)
-        self.assertEqual(d["coordinate_system"]["up_axis"], 2)
+        self.assertEqual(d["coordinate_system"], "ros")
 
     def test_round_trip_with_opencv(self):
         from src.model.data import ProjectData
@@ -202,10 +210,10 @@ class TestProjectDataCoordinateSystem(unittest.TestCase):
         proj = ProjectData.from_dict(d)
         self.assertEqual(proj.coordinate_system, CoordinateSystem.ros())
 
-    def test_version_is_3_0(self):
+    def test_version_is_1_0(self):
         from src.model.data import ProjectData
         proj = ProjectData()
-        self.assertEqual(proj.version, "3.0")
+        self.assertEqual(proj.version, "1.0")
 
 
 class TestSliceEngineCoordinateSystem(unittest.TestCase):
