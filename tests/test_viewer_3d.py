@@ -626,5 +626,148 @@ class TestViewer3DRotationMatrix(unittest.TestCase):
         np.testing.assert_array_almost_equal(result, [-1, 0, 0], decimal=10)
 
 
+class TestViewer3DLoadGeometry(unittest.TestCase):
+    """Tests for load_geometry mesh vs point cloud loading order."""
+
+    @patch('src.gui.viewer_3d.rendering')
+    @patch('src.gui.viewer_3d.o3d')
+    def setUp(self, mock_o3d, mock_rendering):
+        mock_rendering.MaterialRecord.return_value = MagicMock()
+        from src.gui.viewer_3d import Viewer3D
+        self.viewer = Viewer3D()
+        self.viewer._renderer_failed = False
+
+    def _make_mesh_mock(self, n_triangles=1000, has_vertex_colors=True):
+        """Create a mock TriangleMesh with triangles."""
+        mock_mesh = MagicMock()
+        mock_triangles = MagicMock()
+        mock_triangles.__len__ = MagicMock(return_value=n_triangles)
+        mock_mesh.triangles = mock_triangles
+        mock_mesh.has_vertex_colors.return_value = has_vertex_colors
+        return mock_mesh
+
+    def _make_empty_mesh_mock(self):
+        """Create a mock TriangleMesh with no triangles (point-only file)."""
+        mock_mesh = MagicMock()
+        mock_triangles = MagicMock()
+        mock_triangles.__len__ = MagicMock(return_value=0)
+        mock_mesh.triangles = mock_triangles
+        return mock_mesh
+
+    @patch('src.core.config.ConfigManager.instance')
+    @patch('src.gui.viewer_3d.o3d')
+    def test_mesh_ply_loads_as_triangle_mesh(self, mock_o3d, mock_config_inst):
+        """PLY file with mesh data is loaded as TriangleMesh, not PointCloud."""
+        mock_config = MagicMock()
+        mock_config.get_ui_value.return_value = 0  # skip downsampling
+        mock_config_inst.return_value = mock_config
+
+        mock_mesh = self._make_mesh_mock()
+        mock_o3d.io.read_triangle_mesh.return_value = mock_mesh
+
+        self.viewer._setup_geometry = MagicMock()
+        self.viewer.load_geometry("test_mesh.ply")
+
+        mock_o3d.io.read_triangle_mesh.assert_called_once_with("test_mesh.ply")
+        mock_o3d.io.read_point_cloud.assert_not_called()
+        mock_mesh.compute_vertex_normals.assert_called_once()
+        self.assertIs(self.viewer.original_geometry, mock_mesh)
+
+    @patch('src.core.config.ConfigManager.instance')
+    @patch('src.gui.viewer_3d.o3d')
+    def test_pointcloud_ply_falls_back_to_read_point_cloud(self, mock_o3d, mock_config_inst):
+        """PLY file with only points falls back to read_point_cloud."""
+        mock_config = MagicMock()
+        mock_config.get_ui_value.return_value = 0
+        mock_config_inst.return_value = mock_config
+
+        mock_empty_mesh = self._make_empty_mesh_mock()
+        mock_o3d.io.read_triangle_mesh.return_value = mock_empty_mesh
+
+        mock_pcd = MagicMock()
+        mock_pcd_points = MagicMock()
+        mock_pcd_points.__len__ = MagicMock(return_value=5000)
+        mock_pcd.points = mock_pcd_points
+        mock_o3d.io.read_point_cloud.return_value = mock_pcd
+
+        self.viewer._setup_geometry = MagicMock()
+        self.viewer.load_geometry("test_pointcloud.ply")
+
+        mock_o3d.io.read_triangle_mesh.assert_called_once_with("test_pointcloud.ply")
+        mock_o3d.io.read_point_cloud.assert_called_once_with("test_pointcloud.ply")
+        self.assertIs(self.viewer.original_geometry, mock_pcd)
+
+    @patch('src.core.config.ConfigManager.instance')
+    @patch('src.gui.viewer_3d.o3d')
+    def test_mesh_downsamples_with_simplify_vertex_clustering(self, mock_o3d, mock_config_inst):
+        """Mesh geometry uses simplify_vertex_clustering for downsampling."""
+        mock_config = MagicMock()
+        mock_config.get_ui_value.return_value = 0.05
+        mock_config_inst.return_value = mock_config
+
+        mock_mesh = self._make_mesh_mock()
+        mock_o3d.io.read_triangle_mesh.return_value = mock_mesh
+
+        self.viewer._setup_geometry = MagicMock()
+        self.viewer.load_geometry("test_mesh.ply")
+
+        mock_mesh.simplify_vertex_clustering.assert_called_once_with(voxel_size=0.05)
+
+    @patch('src.core.config.ConfigManager.instance')
+    @patch('src.gui.viewer_3d.o3d')
+    def test_pointcloud_downsamples_with_voxel_down_sample(self, mock_o3d, mock_config_inst):
+        """Point cloud geometry uses voxel_down_sample for downsampling."""
+        mock_config = MagicMock()
+        mock_config.get_ui_value.return_value = 0.05
+        mock_config_inst.return_value = mock_config
+
+        mock_empty_mesh = self._make_empty_mesh_mock()
+        mock_o3d.io.read_triangle_mesh.return_value = mock_empty_mesh
+
+        mock_pcd = MagicMock()
+        # Point cloud has no triangles attribute
+        mock_pcd.triangles = MagicMock()
+        mock_pcd.triangles.__len__ = MagicMock(return_value=0)
+        del mock_pcd.triangles
+        mock_o3d.io.read_point_cloud.return_value = mock_pcd
+
+        self.viewer._setup_geometry = MagicMock()
+        self.viewer.load_geometry("test_pointcloud.ply")
+
+        mock_pcd.voxel_down_sample.assert_called_once_with(voxel_size=0.05)
+
+    @patch('src.core.config.ConfigManager.instance')
+    @patch('src.gui.viewer_3d.o3d')
+    def test_mesh_without_vertex_colors_gets_uniform_gray(self, mock_o3d, mock_config_inst):
+        """Mesh without vertex colors gets painted uniform gray."""
+        mock_config = MagicMock()
+        mock_config.get_ui_value.return_value = 0
+        mock_config_inst.return_value = mock_config
+
+        mock_mesh = self._make_mesh_mock(has_vertex_colors=False)
+        mock_o3d.io.read_triangle_mesh.return_value = mock_mesh
+
+        self.viewer._setup_geometry = MagicMock()
+        self.viewer.load_geometry("test_mesh.ply")
+
+        mock_mesh.paint_uniform_color.assert_called_once_with([0.7, 0.7, 0.7])
+
+    @patch('src.core.config.ConfigManager.instance')
+    @patch('src.gui.viewer_3d.o3d')
+    def test_mesh_with_vertex_colors_keeps_them(self, mock_o3d, mock_config_inst):
+        """Mesh with vertex colors does not get paint_uniform_color called."""
+        mock_config = MagicMock()
+        mock_config.get_ui_value.return_value = 0
+        mock_config_inst.return_value = mock_config
+
+        mock_mesh = self._make_mesh_mock(has_vertex_colors=True)
+        mock_o3d.io.read_triangle_mesh.return_value = mock_mesh
+
+        self.viewer._setup_geometry = MagicMock()
+        self.viewer.load_geometry("test_mesh.ply")
+
+        mock_mesh.paint_uniform_color.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -193,13 +193,16 @@ class Viewer3D(CameraMixin, AnnotationMixin, QWidget):
                 # GLB/GLTF: load via trimesh, bake UV texture → vertex colors (REQ-031)
                 geom = self._load_gltf(file_path)
             else:
-                # Point cloud or mesh via Open3D
-                geom = o3d.io.read_point_cloud(file_path)
-                if geom.is_empty():
-                    geom = o3d.io.read_triangle_mesh(file_path)
+                # Try mesh first — read_point_cloud() succeeds on mesh PLY
+                # files (reads vertices as points, discards faces), so we must
+                # try read_triangle_mesh() first to preserve face connectivity.
+                geom = o3d.io.read_triangle_mesh(file_path)
+                if len(geom.triangles) > 0:
                     geom.compute_vertex_normals()
                     if not geom.has_vertex_colors():
                         geom.paint_uniform_color([0.7, 0.7, 0.7])
+                else:
+                    geom = o3d.io.read_point_cloud(file_path)
 
             self.original_geometry = geom
 
