@@ -51,4 +51,17 @@ types:
     index: 1
     default_elevation: 0.0
     default_3d_height: 0.5
+  Bed:
+    color:
+    - 135
+    - 192
+    - 115
+    - 150
+    border:
+    - 61
+    - 128
+    - 38
+    index: 5
+    default_elevation: 0.0
+    default_3d_height: 0.5
 default_type: Furniture
