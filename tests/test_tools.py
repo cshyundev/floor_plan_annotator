@@ -117,7 +117,7 @@ class TestTools(unittest.TestCase):
         # Finish (Right Click)
         ctx_finish = self.create_context(QPointF(0, 10), buttons=Qt.MouseButton.RightButton)
 
-        with unittest.mock.patch('src.gui.room_type_popup.RoomTypePopup') as MockPopup:
+        with unittest.mock.patch('src.gui.type_popup.TypePopup') as MockPopup:
             mock_popup = MagicMock()
             MockPopup.return_value = mock_popup
             mock_popup.exec.return_value = True
@@ -198,7 +198,7 @@ class TestTools(unittest.TestCase):
 
         ctx_finish = self.create_context(QPointF(0, 10), buttons=Qt.MouseButton.RightButton)
 
-        with unittest.mock.patch('src.gui.custom_polygon_type_popup.CustomPolygonTypePopup') as MockPopup:
+        with unittest.mock.patch('src.gui.type_popup.TypePopup') as MockPopup:
             mock_popup = MagicMock()
             MockPopup.return_value = mock_popup
             mock_popup.exec.return_value = True
@@ -226,7 +226,7 @@ class TestTools(unittest.TestCase):
 
         release_ctx = self.create_context(QPointF(5, 5))
 
-        with unittest.mock.patch('src.gui.object_type_popup.ObjectTypePopup') as MockPopup:
+        with unittest.mock.patch('src.gui.type_popup.TypePopup') as MockPopup:
             mock_popup = MagicMock()
             MockPopup.return_value = mock_popup
             mock_popup.exec.return_value = True

@@ -223,8 +223,8 @@ class DrawRoomTool(DrawPolygonTool):
 
     def _select_room_type(self):
         from PyQt6.QtGui import QCursor  # noqa: QCursor is in QtGui
-        from src.gui.room_type_popup import RoomTypePopup
-        popup = RoomTypePopup(self.canvas)
+        from src.gui.type_popup import TypePopup
+        popup = TypePopup(self.canvas, self.config.get_room_types, [200, 200, 200, 100])
         popup.move(QCursor.pos())
         if popup.exec():
             selected = popup.get_selected_type()
@@ -278,8 +278,8 @@ class DrawCustomPolygonTool(DrawPolygonTool):
 
     def _select_custom_polygon_type(self):
         from PyQt6.QtGui import QCursor  # noqa: QCursor is in QtGui
-        from src.gui.custom_polygon_type_popup import CustomPolygonTypePopup
-        popup = CustomPolygonTypePopup(self.canvas)
+        from src.gui.type_popup import TypePopup
+        popup = TypePopup(self.canvas, self.config.get_custom_polygon_types, [100, 220, 100, 100])
         popup.move(QCursor.pos())
         if popup.exec():
             selected = popup.get_selected_type()

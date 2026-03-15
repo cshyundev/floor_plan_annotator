@@ -118,7 +118,7 @@ class TestDrawPolygonNodeReuse(unittest.TestCase):
         self._click(tool, 10, 0)  # Reuse B
         self._click(tool, 10, 10) # New C
 
-        with patch('src.gui.room_type_popup.RoomTypePopup') as MockPopup:
+        with patch('src.gui.type_popup.TypePopup') as MockPopup:
             mock_popup = MagicMock()
             MockPopup.return_value = mock_popup
             mock_popup.exec.return_value = True
@@ -168,7 +168,7 @@ class TestDrawPolygonNodeReuse(unittest.TestCase):
         self.assertEqual(len(tool.current_nodes), 3)
         self.assertEqual(len(tool._shared_nodes), 0)
 
-        with patch('src.gui.room_type_popup.RoomTypePopup') as MockPopup:
+        with patch('src.gui.type_popup.TypePopup') as MockPopup:
             mock_popup = MagicMock()
             MockPopup.return_value = mock_popup
             mock_popup.exec.return_value = True
@@ -193,7 +193,7 @@ class TestDrawPolygonNodeReuse(unittest.TestCase):
         self.assertIs(tool.current_nodes[0], existing)
         self.assertIn(existing, tool._shared_nodes)
 
-        with patch('src.gui.custom_polygon_type_popup.CustomPolygonTypePopup') as MockPopup:
+        with patch('src.gui.type_popup.TypePopup') as MockPopup:
             mock_popup = MagicMock()
             MockPopup.return_value = mock_popup
             mock_popup.exec.return_value = True

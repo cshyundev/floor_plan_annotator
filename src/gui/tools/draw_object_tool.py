@@ -124,9 +124,9 @@ class DrawObjectTool(Tool):
         self._press_pos = None
 
     def _select_object_type(self):
-        from src.gui.object_type_popup import ObjectTypePopup
+        from src.gui.type_popup import TypePopup
         from PyQt6.QtGui import QCursor  # noqa: QCursor is in QtGui
-        popup = ObjectTypePopup(self.canvas)
+        popup = TypePopup(self.canvas, self.config.get_object_types, [150, 200, 255, 150])
         popup.move(QCursor.pos())
         if popup.exec():
             selected = popup.get_selected_type()
