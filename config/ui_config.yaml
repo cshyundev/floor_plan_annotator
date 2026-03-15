@@ -99,3 +99,40 @@ annotation_3d:
 autosave:
   enabled: true          # Default: auto-save enabled (overridden by QSettings at runtime)
   interval_minutes: 5    # Default interval in minutes (overridden by QSettings at runtime)
+
+# Map Alignment Tool (src/map_align/)
+map_align:
+  display:
+    voxel_size: 0.05                    # Meters — downsample for display performance
+  occupancy_grid:
+    wall_height: 2.0                    # Meters — occupied cell extrusion height for 3D alignment
+  view:
+    initial_scale: 50.0                 # Pixels per meter — initial zoom level
+    min_scale: 1.0                      # Minimum zoom (pixels per meter)
+    max_scale: 10000.0                  # Maximum zoom (pixels per meter)
+    zoom_factor: 1.1                    # Zoom multiplier per scroll notch
+  step_sizes:
+    translate_default: 0.1              # Meters — arrow key nudge step
+    translate_min: 0.01                 # Meters — minimum translate step spinbox value
+    translate_max: 10.0                 # Meters — maximum translate step spinbox value
+    rotate_default: 5.0                 # Degrees — rotation key step
+    rotate_min: 0.5                     # Degrees — minimum rotation step spinbox value
+    rotate_max: 45.0                    # Degrees — maximum rotation step spinbox value
+  icp:
+    max_correspondence_distance: 0.5    # Meters — maximum point pairing distance
+    max_iterations: 200                 # Maximum ICP iterations
+  ui:
+    panel_width: 260                    # Pixels — controls panel width
+  renderer:
+    point_size: 3.0                     # Point size for unlit point cloud material
+    camera_fov: 60.0                    # Degrees — default camera field of view
+    camera_eye: [0.0, -20.0, 15.0]     # Default camera eye position
+    camera_center: [0.0, 0.0, 0.0]     # Default camera look-at center
+    camera_up: [0.0, 0.0, 1.0]         # Default camera up vector
+    camera_fit_coefficient: 0.8         # Camera fit distance coefficient
+    axes_line_width: 3.0               # Line width for XYZ axes
+    grid_line_width: 1.0               # Line width for grid lines
+    axes_min_size: 0.5                 # Minimum axes size threshold
+    axes_fallback_size: 1.0            # Fallback axes size when below minimum
+    grid_min_extent: 1.0               # Minimum grid extent threshold
+    grid_fallback_extent: 20.0         # Fallback grid extent when below minimum

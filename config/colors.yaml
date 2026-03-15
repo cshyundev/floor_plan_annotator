@@ -82,3 +82,14 @@ tool_preview:
   object:
     border: [79, 195, 247]            # accent blue
     fill: [79, 195, 247, 40]          # accent blue, very transparent
+
+# Map Alignment Tool (src/map_align/)
+map_align:
+  reference: [220, 60, 60, 200]       # Red — legend color for reference
+  source: [60, 120, 220, 200]         # Blue — movable source cloud
+  grid: [200, 200, 200, 80]           # Light gray — grid lines
+  grid_text: [120, 120, 120]          # Medium gray — grid labels
+  background: [30, 30, 30]            # Dark gray — view background
+  background_top: [18, 22, 35]        # 3D gradient background — top color
+  background_bottom: [38, 48, 72]     # 3D gradient background — bottom color
+  grid_3d: [65, 80, 115]             # 3D grid lines color
