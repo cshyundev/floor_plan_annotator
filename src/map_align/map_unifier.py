@@ -7,6 +7,7 @@ Supported inputs:
 """
 
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +18,28 @@ import trimesh
 # 3D file extensions (point cloud + mesh)
 _3D_EXTENSIONS = frozenset({'.ply', '.pcd', '.obj', '.stl', '.glb', '.gltf'})
 _OCCUPANCY_EXTENSIONS = frozenset({'.yaml', '.yml'})
+
+_FACE_ELEMENT_RE = re.compile(rb'^element\s+face\s+(\d+)', re.MULTILINE)
+
+
+def ply_has_faces(file_path: str) -> bool:
+    """PLY 헤더를 읽어서 face element가 있는지 판별.
+
+    바이너리 모드로 헤더(`end_header`까지)만 읽고,
+    `element face N` 패턴이 존재하며 N > 0이면 True를 반환한다.
+    헤더 파싱 실패 시 False (point cloud로 간주).
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            header = b''
+            for line in f:
+                header += line
+                if line.strip() == b'end_header':
+                    break
+        match = _FACE_ELEMENT_RE.search(header)
+        return match is not None and int(match.group(1)) > 0
+    except (OSError, ValueError):
+        return False
 
 
 def load_as_geometry(
@@ -35,8 +58,14 @@ def load_as_geometry(
         return _load_occupancy_grid(file_path, wall_height)
 
     if ext in _3D_EXTENSIONS:
-        # Try mesh first
-        if ext in ('.obj', '.stl', '.ply'):
+        # PLY: check header to decide mesh vs point cloud without triggering warnings
+        if ext == '.ply':
+            if ply_has_faces(file_path):
+                mesh = o3d.io.read_triangle_mesh(file_path)
+                mesh.compute_vertex_normals()
+                return mesh
+            # No faces in header → fall through to point cloud fallback below
+        elif ext in ('.obj', '.stl'):
             mesh = o3d.io.read_triangle_mesh(file_path)
             if len(mesh.triangles) > 0:
                 mesh.compute_vertex_normals()

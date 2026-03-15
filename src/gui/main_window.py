@@ -628,6 +628,29 @@ class MainWindow(QMainWindow):
             )
         self._type_editor_dialog.exec()
 
+    def _import_annotations(self, path: str) -> None:
+        """Load annotations from *path* into the current scene without reloading 3D data."""
+        from src.core.io import ProjectIO
+        try:
+            proj = ProjectIO.load_project(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Open Error", str(e))
+            return
+        self._current_file_path = path
+        self.undo_stack.clear()
+        self.canvas_2d.background_item = None
+        self.canvas_2d.load_from_data(proj)
+        if proj.coordinate_system:
+            cs = proj.coordinate_system
+            self.coord_sys_widget.set_coordinate_system(cs)
+            self._apply_coordinate_system(cs)
+        # Skip _restore_data_source — 3D data is already loaded
+        if self.processor._points is not None:
+            self._update_2d_slice()
+        self.undo_stack.setClean()
+        self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
+        self._update_title_bar()
+
     def _open_alignment_dialog(self) -> None:
         """Open the map alignment dialog to import annotations from a reference map."""
         if not self._3d_file_path:
@@ -652,7 +675,7 @@ class MainWindow(QMainWindow):
         if dlg.exec() == AlignmentWindow.DialogCode.Accepted:
             path = dlg.result_path()
             if path:
-                self._load_project_file(path)
+                self._import_annotations(path)
                 self.statusBar().showMessage(
                     "Annotations imported from reference map.", 5000,
                 )
