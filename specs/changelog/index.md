@@ -1,5 +1,7 @@
 # Changelog Index
 
+- 2026-03-15 [Changed] Codebase refactoring: unified 3 TypePopup classes into generic TypePopup, data-driven type editors, extracted RecentFilesManager/AutosaveManager from MainWindow, decomposed create_controls() into builder methods, removed dead code (tf_io.py)
+- 2026-03-13 [Added] Map Alignment Tool: Source/Reference color legend with red/blue swatches in Display group, "Legend Colors" checkbox to toggle between legend colors and original file colors (IMP-011)
 - 2026-03-07 [Fixed] Type selection popup buttons (Room/Zone/Object) left-align text so labels line up regardless of length; Properties Panel form labels also left-aligned
 - 2026-03-07 [Added] Tools menu with Preferences dialog: auto-save enable/disable toggle and interval setting (1–60 min), persisted via QSettings; Edit menu renamed to Tools
 - 2026-03-07 [Added] FEAT-009 Auto-save: 5-minute QTimer periodically writes `.<name>.autosave.json` when dirty; autosave file deleted on successful manual save (REQ-029, auto-save only)
