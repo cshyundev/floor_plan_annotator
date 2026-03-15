@@ -17,6 +17,8 @@ import os
 from src.core.config import ConfigManager
 from src.core.coordinate_system import CoordinateSystem
 from src.gui.coordinate_system_widget import CoordinateSystemWidget
+from src.gui.recent_files_manager import RecentFilesManager
+from src.gui.autosave_manager import AutosaveManager
 
 # Try to import Viewer3D - let it fail naturally if Open3D doesn't work
 # The Viewer3D class itself handles failures gracefully
@@ -82,9 +84,8 @@ class MainWindow(QMainWindow):
         self._created_at = None         # type: str | None  — ISO 8601, preserved across saves
 
         # Recent files (FEAT-007)
-        self._recent_files: list[str] = []
-        self._recent_files_menu = None  # populated in create_menu()
-        self._load_recent_files()
+        self._recent_mgr = RecentFilesManager(self)
+        self._recent_mgr.file_selected.connect(self._open_recent_file)
 
         # Controls (Dock)
         self.create_controls()
@@ -118,11 +119,13 @@ class MainWindow(QMainWindow):
         # Menu Bar
         self.create_menu()
 
-        # Auto-save timer (FEAT-009)
-        from PyQt6.QtCore import QTimer
-        self._autosave_timer = QTimer(self)
-        self._autosave_timer.timeout.connect(self._do_autosave)
-        self._load_autosave_settings()  # interval + enabled 설정
+        # Auto-save (FEAT-009)
+        self._autosave_mgr = AutosaveManager(
+            self,
+            get_save_data=self._get_autosave_data,
+            get_file_path=lambda: self._current_file_path,
+            is_dirty=lambda: not self.undo_stack.isClean(),
+        )
 
     # ── Lifecycle helpers (FEAT-006) ────────────────────────────────────────
 
@@ -178,8 +181,8 @@ class MainWindow(QMainWindow):
         load_occ_action.triggered.connect(self.load_occupancy_grid)
         file_menu.addAction(load_occ_action)
 
-        self._recent_files_menu = file_menu.addMenu("Recent Files")
-        self._update_recent_files_menu()
+        recent_menu = file_menu.addMenu("Recent Files")
+        self._recent_mgr.set_menu(recent_menu)
 
         file_menu.addSeparator()
 
@@ -211,56 +214,11 @@ class MainWindow(QMainWindow):
         prefs_action.triggered.connect(self._open_preferences)
         tools_menu.addAction(prefs_action)
 
-    # ── Recent Files (FEAT-007) ────────────────────────────────────────────
-
-    def _load_recent_files(self) -> None:
-        from PyQt6.QtCore import QSettings
-        settings = QSettings()
-        paths = settings.value("recentFiles", defaultValue=[], type=list) or []
-        self._recent_files = [p for p in paths if isinstance(p, str)]
-
-    def _save_recent_files(self) -> None:
-        from PyQt6.QtCore import QSettings
-        settings = QSettings()
-        settings.setValue("recentFiles", self._recent_files)
-
-    def _add_to_recent_files(self, path: str) -> None:
-        abs_path = os.path.abspath(path)
-        if abs_path in self._recent_files:
-            self._recent_files.remove(abs_path)
-        self._recent_files.insert(0, abs_path)
-        self._recent_files = self._recent_files[:5]
-        self._save_recent_files()
-        self._update_recent_files_menu()
-
-    def _update_recent_files_menu(self) -> None:
-        if self._recent_files_menu is None:
-            return
-        self._recent_files_menu.clear()
-        if not self._recent_files:
-            no_action = QAction("(No recent files)", self)
-            no_action.setEnabled(False)
-            self._recent_files_menu.addAction(no_action)
-            return
-        for path in self._recent_files:
-            parent = os.path.basename(os.path.dirname(path))
-            name = f"{parent}/{os.path.basename(path)}" if parent else os.path.basename(path)
-            action = QAction(name, self)
-            action.setToolTip(path)
-            action.setStatusTip(path)
-            action.triggered.connect(lambda checked, p=path: self._open_recent_file(p))
-            self._recent_files_menu.addAction(action)
-        self._recent_files_menu.addSeparator()
-        clear_action = QAction("Clear Recent Files", self)
-        clear_action.triggered.connect(self._clear_recent_files)
-        self._recent_files_menu.addAction(clear_action)
+    # ── Recent Files (FEAT-007) — delegated to RecentFilesManager ────────
 
     def _open_recent_file(self, path: str) -> None:
         if not os.path.exists(path):
-            if path in self._recent_files:
-                self._recent_files.remove(path)
-            self._save_recent_files()
-            self._update_recent_files_menu()
+            self._recent_mgr.remove(path)
             self.statusBar().showMessage(
                 f"File not found: {os.path.basename(path)}", 4000
             )
@@ -292,70 +250,29 @@ class MainWindow(QMainWindow):
         self.annotation_sync.update_all_annotations(self.canvas_2d.scene)
         self._update_title_bar()
 
-    def _clear_recent_files(self) -> None:
-        self._recent_files = []
-        self._save_recent_files()
-        self._update_recent_files_menu()
-
     # ── End Recent Files ───────────────────────────────────────────────────
 
-    # ── Auto-save (FEAT-009) ───────────────────────────────────────────────
+    # ── Auto-save (FEAT-009) — delegated to AutosaveManager ───────────────
 
-    def _autosave_path(self) -> str | None:
-        if not self._current_file_path:
-            return None
-        folder = os.path.dirname(self._current_file_path)
-        name = os.path.basename(self._current_file_path)
-        return os.path.join(folder, f".{name}.autosave.json")
-
-    def _do_autosave(self) -> None:
-        if not self._current_file_path:
-            return
-        if self.undo_stack.isClean():
-            return
-        path = self._autosave_path()
-        if path is None:
-            return
-        from src.core.io import ProjectIO
+    def _get_autosave_data(self):
+        """Build project data for autosave."""
         from datetime import datetime, timezone
-        try:
-            project_data = self.canvas_2d.save_to_data()
-            project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
-            if self._map_metadata is not None:
-                project_data.map_metadata = self._map_metadata
-            if not self._created_at:
-                self._created_at = datetime.now(timezone.utc).isoformat()
-            project_data.created_at = self._created_at
-            project_data.modified_at = datetime.now(timezone.utc).isoformat()
-            ProjectIO.save_project(project_data, path)
-        except Exception:
-            pass  # 실패는 무시 — 사용자 작업 방해 금지
-
-    def _delete_autosave(self) -> None:
-        path = self._autosave_path()
-        if path and os.path.exists(path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-    def _load_autosave_settings(self) -> None:
-        from PyQt6.QtCore import QSettings
-        s = QSettings()
-        enabled = s.value("autosave/enabled", defaultValue=True, type=bool)
-        interval_ms = s.value("autosave/interval_minutes", defaultValue=5, type=int) * 60 * 1000
-        self._autosave_timer.setInterval(interval_ms)
-        if enabled:
-            self._autosave_timer.start()
-        else:
-            self._autosave_timer.stop()
+        project_data = self.canvas_2d.save_to_data()
+        project_data.coordinate_system = self.coord_sys_widget.current_coordinate_system()
+        if self._map_metadata is not None:
+            project_data.map_metadata = self._map_metadata
+        if not self._created_at:
+            self._created_at = datetime.now(timezone.utc).isoformat()
+        project_data.created_at = self._created_at
+        project_data.modified_at = datetime.now(timezone.utc).isoformat()
+        return project_data
 
     def _open_preferences(self) -> None:
         from src.gui.preferences_dialog import PreferencesDialog
         dlg = PreferencesDialog(self)
         if dlg.exec():
             dlg.save_settings()
-            self._load_autosave_settings()
+            self._autosave_mgr.load_settings()
 
     # ── End Auto-save ──────────────────────────────────────────────────────
 
@@ -396,8 +313,8 @@ class MainWindow(QMainWindow):
             self.undo_stack.setClean()
             self._update_title_bar()
             if self._3d_file_path:
-                self._add_to_recent_files(self._3d_file_path)
-            self._delete_autosave()
+                self._recent_mgr.add(self._3d_file_path)
+            self._autosave_mgr.delete_autosave()
             return True
         except Exception as e:
             QMessageBox.critical(self, "Save Error", str(e))
@@ -481,7 +398,6 @@ class MainWindow(QMainWindow):
         dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
         dock.setMinimumWidth(280)
 
-        # Scrollable container for the dock
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -491,34 +407,62 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(1)
 
-        # Section 1: Properties
+        main_layout.addWidget(self._build_properties_section(config))
+        main_layout.addWidget(self._build_coordinate_section())
+        main_layout.addWidget(self._build_map_info_section())
+        main_layout.addWidget(self._build_view_section(config))
+        main_layout.addWidget(self._build_annotation_section())
+
+        manage_btn = QPushButton("Manage Types...")
+        manage_btn.setStyleSheet("margin: 8px;")
+        manage_btn.clicked.connect(self._open_type_editor)
+        main_layout.addWidget(manage_btn)
+        main_layout.addStretch()
+
+        scroll.setWidget(container)
+        dock.setWidget(scroll)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+        self._build_toolbar(config)
+
+        # Status Bar
+        self.setStatusBar(QStatusBar(self))
+        self.canvas_2d.status_message.connect(self.statusBar().showMessage)
+        self.canvas_2d.unknown_types_warning.connect(self._on_unknown_types)
+
+        # Load bundled sample data on startup (can be disabled in Preferences)
+        from PyQt6.QtCore import QSettings, QTimer
+        if QSettings().value("startup/autoload_sample", defaultValue=True, type=bool):
+            sample_path = "data/sample/sample.ply"
+            if os.path.exists(sample_path):
+                QTimer.singleShot(1000, lambda: self.load_data(sample_path))
+
+    def _build_properties_section(self, config):
         self.properties_panel = PropertiesPanel(self.canvas_2d)
         self.properties_panel.connect_scene(self.canvas_2d.scene)
+        section = CollapsibleSection("Properties")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.properties_panel)
+        section.set_content_layout(layout)
+        return section
 
-        props_section = CollapsibleSection("Properties")
-        props_layout = QVBoxLayout()
-        props_layout.setContentsMargins(0, 0, 0, 0)
-        props_layout.addWidget(self.properties_panel)
-        props_section.set_content_layout(props_layout)
-        main_layout.addWidget(props_section)
-
-        # Section 2: Coordinate System
+    def _build_coordinate_section(self):
         self.coord_sys_widget = CoordinateSystemWidget()
         self.coord_sys_widget.coordinate_system_changed.connect(
             self._on_coordinate_system_changed
         )
+        section = CollapsibleSection("Coordinate System")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.coord_sys_widget)
+        section.set_content_layout(layout)
+        return section
 
-        cs_section = CollapsibleSection("Coordinate System")
-        cs_layout = QVBoxLayout()
-        cs_layout.setContentsMargins(0, 0, 0, 0)
-        cs_layout.addWidget(self.coord_sys_widget)
-        cs_section.set_content_layout(cs_layout)
-        main_layout.addWidget(cs_section)
-
-        # Section 3: Map Info (hidden until occupancy grid loaded)
+    def _build_map_info_section(self):
         self._map_info_section = CollapsibleSection("Map Info")
-        map_info_layout = QVBoxLayout()
-        map_info_layout.setContentsMargins(8, 4, 8, 4)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(8, 4, 8, 4)
         self._map_info_file_label = QLabel("File: —")
         self._map_info_resolution_label = QLabel("Resolution: —")
         self._map_info_origin_label = QLabel("Origin: —")
@@ -528,26 +472,25 @@ class MainWindow(QMainWindow):
                     self._map_info_origin_label, self._map_info_size_label,
                     self._map_info_block_height_label]:
             lbl.setWordWrap(True)
-            map_info_layout.addWidget(lbl)
-        self._map_info_section.set_content_layout(map_info_layout)
+            layout.addWidget(lbl)
+        self._map_info_section.set_content_layout(layout)
         self._map_info_section.setVisible(False)
-        main_layout.addWidget(self._map_info_section)
+        return self._map_info_section
 
-        # Section 4: View Controls
-        view_section = CollapsibleSection("View Controls")
-        view_layout = QVBoxLayout()
-        view_layout.setContentsMargins(8, 4, 8, 4)
+    def _build_view_section(self, config):
+        section = CollapsibleSection("View Controls")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(8, 4, 8, 4)
 
-        view_layout.addWidget(QLabel(config.get_string("labels", "slice_height")))
+        layout.addWidget(QLabel(config.get_string("labels", "slice_height")))
         self.z_slider = QSlider(Qt.Orientation.Horizontal)
         self.z_slider.setRange(0, 100)
         self.z_slider.valueChanged.connect(self.on_slider_change)
         self.z_slider.sliderPressed.connect(self._on_slider_pressed)
         self.z_slider.sliderReleased.connect(self._on_slider_released)
         self._slider_dragging = False
-        view_layout.addWidget(self.z_slider)
+        layout.addWidget(self.z_slider)
 
-        # Debounce timer for full-resolution 3D update after slider stops
         from PyQt6.QtCore import QTimer
         self._3d_final_timer = QTimer()
         self._3d_final_timer.setSingleShot(True)
@@ -555,26 +498,26 @@ class MainWindow(QMainWindow):
         self._3d_final_timer.timeout.connect(self._update_3d_final)
 
         self.z_label = QLabel(config.get_string("labels", "z_value").format(0.0))
-        view_layout.addWidget(self.z_label)
+        layout.addWidget(self.z_label)
 
-        view_layout.addWidget(QLabel("Projection"))
+        layout.addWidget(QLabel("Projection"))
         self.projection_mode_combo = QComboBox()
         self.projection_mode_combo.addItems(["Slice", "All Points"])
         self.projection_mode_combo.currentIndexChanged.connect(self._on_projection_mode_changed)
-        view_layout.addWidget(self.projection_mode_combo)
+        layout.addWidget(self.projection_mode_combo)
 
         self.geometry_visible_checkbox = QCheckBox("Show Original 3D Data")
         self.geometry_visible_checkbox.setChecked(True)
         self.geometry_visible_checkbox.stateChanged.connect(self.on_geometry_visibility_changed)
-        view_layout.addWidget(self.geometry_visible_checkbox)
+        layout.addWidget(self.geometry_visible_checkbox)
 
-        view_section.set_content_layout(view_layout)
-        main_layout.addWidget(view_section)
+        section.set_content_layout(layout)
+        return section
 
-        # Section 3: Annotation Visibility
-        anno_section = CollapsibleSection("Annotation Visibility")
-        anno_layout = QVBoxLayout()
-        anno_layout.setContentsMargins(8, 4, 8, 4)
+    def _build_annotation_section(self):
+        section = CollapsibleSection("Annotation Visibility")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(8, 4, 8, 4)
 
         self._anno_checkboxes = {}
         for category, label in [("room", "Room"), ("wall", "Wall"),
@@ -585,35 +528,22 @@ class MainWindow(QMainWindow):
             cb.stateChanged.connect(
                 lambda state, cat=category: self._on_anno_visibility_changed(cat, state)
             )
-            anno_layout.addWidget(cb)
+            layout.addWidget(cb)
             self._anno_checkboxes[category] = cb
 
-        anno_section.set_content_layout(anno_layout)
-        main_layout.addWidget(anno_section)
+        section.set_content_layout(layout)
+        return section
 
-        # Manage Types button
-        manage_btn = QPushButton("Manage Types...")
-        manage_btn.setStyleSheet("margin: 8px;")
-        manage_btn.clicked.connect(self._open_type_editor)
-        main_layout.addWidget(manage_btn)
-
-        main_layout.addStretch()
-
-        scroll.setWidget(container)
-        dock.setWidget(scroll)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
-
-        # ── Toolbar (checkable tool buttons) ──
+    def _build_toolbar(self, config):
         self.toolbar = QToolBar(config.get_string("labels", "toolbar"))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
 
-        # Tool action group (exclusive — only one tool active at a time)
         self.tool_action_group = QActionGroup(self)
         self.tool_action_group.setExclusive(True)
 
         tool_defs = [
             ("select", "Select", "tools", "select", "Esc"),
-            None,  # separator after Select
+            None,
             ("wall", "Wall", "tools", "wall", "W"),
             ("room", "Room", "tools", "rect", "R"),
             ("custom_polygon", "Zone", "tools", "custom_polygon", "Z"),
@@ -636,16 +566,12 @@ class MainWindow(QMainWindow):
             self.toolbar.addAction(action)
             self._tool_actions[tool_name] = action
 
-        # Default: select tool checked
         self._tool_actions["select"].setChecked(True)
-
-        # Sync toolbar when tool changes via keyboard or other means
         self.canvas_2d.tool_changed.connect(self._sync_toolbar_to_tool)
 
         self.toolbar.addSeparator()
 
         delete_shortcut_raw = config.get_shortcut("tools", "delete") or "Delete"
-        # Handle list of shortcuts (e.g. ["Delete", "Backspace"])
         if isinstance(delete_shortcut_raw, list):
             delete_shortcut = delete_shortcut_raw[0]
         else:
@@ -669,18 +595,6 @@ class MainWindow(QMainWindow):
         redo_action.setShortcut(redo_shortcut)
         redo_action.setToolTip(f"Redo ({redo_shortcut})")
         self.toolbar.addAction(redo_action)
-
-        # Status Bar
-        self.setStatusBar(QStatusBar(self))
-        self.canvas_2d.status_message.connect(self.statusBar().showMessage)
-        self.canvas_2d.unknown_types_warning.connect(self._on_unknown_types)
-
-        # Load bundled sample data on startup (can be disabled in Preferences)
-        from PyQt6.QtCore import QSettings, QTimer
-        if QSettings().value("startup/autoload_sample", defaultValue=True, type=bool):
-            sample_path = "data/sample/sample.ply"
-            if os.path.exists(sample_path):
-                QTimer.singleShot(1000, lambda: self.load_data(sample_path))
 
     def _on_tool_action(self, tool_name):
         self.canvas_2d.set_tool(tool_name)
@@ -743,7 +657,7 @@ class MainWindow(QMainWindow):
 
             # Auto-detect annotations.json in the same folder (FEAT-006)
             self._3d_file_path = os.path.abspath(file_path)
-            self._add_to_recent_files(self._3d_file_path)
+            self._recent_mgr.add(self._3d_file_path)
             self._detect_annotations_for_3d_file(self._3d_file_path)
             self._update_title_bar()
 
@@ -1036,7 +950,7 @@ class MainWindow(QMainWindow):
         # Auto-detect annotations.json in the same folder (FEAT-006)
         if metadata.image_path_absolute:
             self._3d_file_path = metadata.image_path_absolute
-            self._add_to_recent_files(metadata.image_path_absolute)
+            self._recent_mgr.add(metadata.image_path_absolute)
             self._detect_annotations_for_3d_file(metadata.image_path_absolute)
             self._update_title_bar()
 
