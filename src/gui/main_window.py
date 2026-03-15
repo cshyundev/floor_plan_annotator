@@ -204,6 +204,14 @@ class MainWindow(QMainWindow):
 
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
+
+        self._act_import_align = QAction("Import Annotations from Map...", self)
+        self._act_import_align.setEnabled(False)
+        self._act_import_align.triggered.connect(self._open_alignment_dialog)
+        tools_menu.addAction(self._act_import_align)
+
+        tools_menu.addSeparator()
+
         manage_types_action = QAction("Manage Types...", self)
         manage_types_action.triggered.connect(self._open_type_editor)
         tools_menu.addAction(manage_types_action)
@@ -620,6 +628,35 @@ class MainWindow(QMainWindow):
             )
         self._type_editor_dialog.exec()
 
+    def _open_alignment_dialog(self) -> None:
+        """Open the map alignment dialog to import annotations from a reference map."""
+        if not self._3d_file_path:
+            return
+        if not self._confirm_discard_changes():
+            return
+
+        from src.map_align.app import AlignmentWindow
+        from src.map_align.map_unifier import load_as_pointcloud
+
+        source_cloud = load_as_pointcloud(self._3d_file_path)
+        source_geom = self.viewer_3d.original_geometry
+        source_bounds = self.processor.get_bounds_3d()
+
+        dlg = AlignmentWindow(
+            source_path=self._3d_file_path,
+            source_cloud=source_cloud,
+            source_geom=source_geom,
+            source_bounds=source_bounds,
+            parent=self,
+        )
+        if dlg.exec() == AlignmentWindow.DialogCode.Accepted:
+            path = dlg.result_path()
+            if path:
+                self._load_project_file(path)
+                self.statusBar().showMessage(
+                    "Annotations imported from reference map.", 5000,
+                )
+
     def load_data(self, file_path):
         """Load 3D data from file (point cloud or mesh, including GLB/GLTF).
 
@@ -660,6 +697,7 @@ class MainWindow(QMainWindow):
             self._recent_mgr.add(self._3d_file_path)
             self._detect_annotations_for_3d_file(self._3d_file_path)
             self._update_title_bar()
+            self._act_import_align.setEnabled(True)
 
     def on_slider_change(self, value):
         if not self.processor._points is None:
