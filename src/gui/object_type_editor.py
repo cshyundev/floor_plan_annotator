@@ -9,6 +9,10 @@ class ObjectTypeEditorWidget(BaseTypeEditorWidget):
     _default_color = [150, 200, 255, 150]
     _default_border = [80, 130, 200]
     _in_use_label = "object(s)"
+    _config_prefix = "object"
+    _item_class_path = "src.gui.items.object_item.ObjectItem"
+    _type_attr = "object_type"
+    _has_overlay = False
 
     def init_ui(self):
         super().init_ui()
@@ -56,47 +60,3 @@ class ObjectTypeEditorWidget(BaseTypeEditorWidget):
         if self.current_key:
             self._update_config_type(self.current_key, default_3d_height=value)
             self.config_changed.emit()
-
-    def _get_types(self):
-        return self.config.get_object_types()
-
-    def _get_type(self, key):
-        return self.config.get_object_type(key)
-
-    def _add_config_type(self, key, color, border):
-        return self.config.add_object_type(key, color, border)
-
-    def _update_config_type(self, key, **kwargs):
-        return self.config.update_object_type(key, **kwargs)
-
-    def _rename_config_type(self, old_key, new_key):
-        return self.config.rename_object_type(old_key, new_key)
-
-    def _update_items_type(self, old_key, new_key):
-        if not self._scene:
-            return
-        from src.gui.items import ObjectItem
-        for item in self._scene.items():
-            if isinstance(item, ObjectItem) and item.object_type == old_key:
-                item.object_type = new_key
-                item.update_style()
-
-    def _delete_config_type(self, key):
-        self.config.delete_object_type(key)
-
-    def _check_type_in_use(self, type_key):
-        if not self._scene:
-            return []
-        from src.gui.items import ObjectItem
-        return [
-            item for item in self._scene.items()
-            if isinstance(item, ObjectItem) and item.object_type == type_key
-        ]
-
-    def update_all(self):
-        if not self._scene:
-            return
-        from src.gui.items import ObjectItem
-        for item in self._scene.items():
-            if isinstance(item, ObjectItem):
-                item.update_style()

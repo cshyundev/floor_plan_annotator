@@ -21,6 +21,12 @@ class BaseTypeEditorWidget(QWidget):
     _default_border: list = [100, 100, 100]
     _in_use_label: str = "item(s)"
 
+    # Data-driven dispatch: subclasses set these to get generic implementations
+    _config_prefix: str = ""       # e.g. "room", "custom_polygon", "object"
+    _item_class_path: str = ""     # e.g. "src.gui.items.RoomItem"
+    _type_attr: str = ""           # e.g. "room_type", "polygon_type", "object_type"
+    _has_overlay: bool = False     # whether items have update_overlay()
+
     def __init__(self):
         super().__init__()
         self.config = ConfigManager.instance()
@@ -225,31 +231,59 @@ class BaseTypeEditorWidget(QWidget):
         self.border_btn.setIcon(QIcon())
         self.config_changed.emit()
 
-    # --- Abstract interface: subclasses must implement ---
+    # --- Data-driven implementations (override _config_prefix etc.) ---
+
+    def _get_item_class(self):
+        """Import and return the item class from _item_class_path."""
+        module_path, class_name = self._item_class_path.rsplit(".", 1)
+        import importlib
+        mod = importlib.import_module(module_path)
+        return getattr(mod, class_name)
 
     def _get_types(self):
-        raise NotImplementedError
+        return getattr(self.config, f"get_{self._config_prefix}_types")()
 
     def _get_type(self, key):
-        raise NotImplementedError
+        return getattr(self.config, f"get_{self._config_prefix}_type")(key)
 
     def _add_config_type(self, key, color, border):
-        raise NotImplementedError
+        return getattr(self.config, f"add_{self._config_prefix}_type")(key, color, border)
 
     def _update_config_type(self, key, **kwargs):
-        raise NotImplementedError
+        return getattr(self.config, f"update_{self._config_prefix}_type")(key, **kwargs)
 
     def _rename_config_type(self, old_key, new_key):
-        raise NotImplementedError
-
-    def _update_items_type(self, old_key, new_key):
-        raise NotImplementedError
+        return getattr(self.config, f"rename_{self._config_prefix}_type")(old_key, new_key)
 
     def _delete_config_type(self, key):
-        raise NotImplementedError
+        getattr(self.config, f"delete_{self._config_prefix}_type")(key)
+
+    def _update_items_type(self, old_key, new_key):
+        if not self._scene:
+            return
+        item_cls = self._get_item_class()
+        for item in self._scene.items():
+            if isinstance(item, item_cls) and getattr(item, self._type_attr) == old_key:
+                setattr(item, self._type_attr, new_key)
+                item.update_style()
+                if self._has_overlay:
+                    item.update_overlay()
 
     def _check_type_in_use(self, type_key):
-        raise NotImplementedError
+        if not self._scene:
+            return []
+        item_cls = self._get_item_class()
+        return [
+            item for item in self._scene.items()
+            if isinstance(item, item_cls) and getattr(item, self._type_attr) == type_key
+        ]
 
     def update_all(self):
-        raise NotImplementedError
+        if not self._scene:
+            return
+        item_cls = self._get_item_class()
+        for item in self._scene.items():
+            if isinstance(item, item_cls):
+                item.update_style()
+                if self._has_overlay:
+                    item.update_overlay()
